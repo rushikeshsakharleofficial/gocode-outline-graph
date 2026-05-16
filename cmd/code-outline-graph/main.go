@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/term"
+
 	"gocode-outline-graph/internal/db"
 	"gocode-outline-graph/internal/indexer"
 	"gocode-outline-graph/internal/paths"
@@ -114,11 +116,7 @@ func openProjectDB(rawPath string) (string, *db.Database) {
 
 // isTerminal reports whether f is an interactive terminal.
 func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // attachProgress wires a terminal progress bar onto idx.OnProgress.

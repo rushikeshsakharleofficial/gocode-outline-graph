@@ -367,6 +367,125 @@ func cmdStatus(args []string) {
 	}
 }
 
+// skillContent is the SKILL.md embedded at build time.
+// Users run `code-outline-graph-go install-skill` to install it.
+const skillContent = `# code-outline-graph-go Skill
+
+**MANDATORY: Use this before any file read, grep, or search operation.**
+
+## Hard Rule
+
+` + "```" + `
+NEVER use Read/Grep/Glob on source files without first checking the outline index.
+` + "```" + `
+
+If you're about to read a file → STOP → use ` + "`list_outline`" + ` or ` + "`find_by_keyword`" + ` first.
+
+---
+
+## The Confirm-Before-Read Protocol
+
+` + "```" + `
+Step 1 — Find (no body, just metadata):
+  find_by_keyword({"query": "authentication middleware", "project_path": "."})
+  → [{name: "authenticate", file: "auth.go", start: 45, end: 89,
+      signature: "func authenticate(token string) (*User, error)"}]
+
+Step 2 — Confirm (pick correct candidate from signatures)
+
+Step 3 — Read ONLY that body:
+  read_symbol_body({"name": "authenticate", "file_path": "auth.go", "project_path": "."})
+  → 44 lines instead of 300-line file
+` + "```" + `
+
+Token savings: 10x–50x per edit.
+
+---
+
+## Tool Reference
+
+| What you need | Tool to use |
+|---|---|
+| Find function/class to edit | ` + "`find_by_keyword({\"query\": \"...\", \"project_path\": \".\"})`" + ` |
+| Read one function body | ` + "`read_symbol_body({\"name\": \"...\", \"file_path\": \"...\", \"project_path\": \".\"})`" + ` |
+| All symbols in file | ` + "`list_outline({\"file_path\": \"...\", \"project_path\": \".\"})`" + ` |
+| Project overview | ` + "`get_outline_summary({\"project_path\": \".\"})`" + ` |
+| Imports + top of file | ` + "`get_file_header({\"file_path\": \"...\", \"project_path\": \".\"})`" + ` |
+| Exact symbol metadata | ` + "`get_symbol({\"name\": \"...\", \"project_path\": \".\"})`" + ` |
+| Read specific lines | ` + "`get_line_range({\"file_path\": \"...\", \"start_line\": N, \"end_line\": M})`" + ` |
+| Who calls a function? | ` + "`find_callers({\"name\": \"...\", \"project_path\": \".\"})`" + ` |
+| What does a function call? | ` + "`find_callees({\"symbol_name\": \"...\", \"project_path\": \".\"})`" + ` |
+| Index a project | ` + "`index_project({\"project_path\": \".\"})`" + ` |
+| Reindex changed files | ` + "`update_project({\"project_path\": \".\"})`" + ` |
+| Remove stale entries | ` + "`prune_project({\"project_path\": \".\"})`" + ` |
+
+---
+
+## Patterns by Task
+
+### Editing a function
+` + "```" + `
+find_by_keyword({"query": "user login handler", "project_path": "."})
+→ pick from candidates using signatures
+read_symbol_body({"name": "Login", "file_path": "handlers/auth.go", "project_path": "."})
+→ edit with exact line range from start_line/end_line
+` + "```" + `
+
+### Tracing a call chain
+` + "```" + `
+find_callers({"name": "InsertSymbolsForFile", "project_path": "."})
+→ every function that calls this one
+
+find_callees({"symbol_name": "IndexAll", "project_path": "."})
+→ everything IndexAll calls
+` + "```" + `
+
+### Project overview before diving in
+` + "```" + `
+get_outline_summary({"project_path": "."})
+→ file count, symbol count, top files by density
+` + "```" + `
+
+---
+
+## After Every Code Change
+
+**MANDATORY:** After editing or creating any source file, run:
+
+` + "```" + `
+update_project({"project_path": "."})
+` + "```" + `
+
+---
+
+## CLI Commands (terminal)
+
+` + "```bash\n" + `code-outline-graph-go build .          # full index
+code-outline-graph-go update .         # reindex changed files
+code-outline-graph-go search . <query> # search from terminal
+code-outline-graph-go outline . <file> # show file symbols
+code-outline-graph-go status .         # index stats
+code-outline-graph-go serve            # start MCP server (stdio)
+code-outline-graph-go install          # write MCP configs for editors
+code-outline-graph-go install-skill    # install this skill to ~/.claude/skills/
+` + "```\n`"
+
+func cmdInstallSkill(_ []string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		errorf("could not determine home directory: %v", err)
+	}
+	skillDir := filepath.Join(home, ".claude", "skills", "code-outline-graph-go")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		errorf("mkdir %q: %v", skillDir, err)
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+		errorf("write skill: %v", err)
+	}
+	stderrf("%s✓ Skill installed:%s %s%s%s\n", colorGreen, colorReset, colorCyan, skillPath, colorReset)
+}
+
 func cmdServe(args []string) {
 	// stdout is reserved for MCP JSON — only write to stderr before starting.
 	fmt.Fprintln(os.Stderr, colorDim+"Starting MCP server..."+colorReset)
@@ -572,6 +691,7 @@ func printUsage() {
   %sserve%s                  Start MCP server on stdio
   %sprune%s   <path>         Remove stale index entries
   %sinstall%s [path]         Write MCP config files for editors
+  %sinstall-skill%s          Install Claude Code skill to ~/.claude/skills/
   %sversion%s                Print version
 
 %sOptions:%s
@@ -584,6 +704,7 @@ Default path is "." if not provided.
 		colorBold, colorReset,
 		colorBold, colorReset,
 		colorBold, colorReset,
+		colorGreen, colorReset,
 		colorGreen, colorReset,
 		colorGreen, colorReset,
 		colorGreen, colorReset,
@@ -625,6 +746,8 @@ func main() {
 		cmdPrune(os.Args[2:])
 	case "install":
 		cmdInstall(os.Args[2:])
+	case "install-skill":
+		cmdInstallSkill(os.Args[2:])
 	case "version":
 		fmt.Println("code-outline-graph version 1.0.0 (Go)")
 	default:

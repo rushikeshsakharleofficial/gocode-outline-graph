@@ -387,7 +387,7 @@ func mergeConfigFile(configPath string, binaryPath string) string {
 	}
 
 	// Overwrite our server entry.
-	mcpServers["code-outline-graph"] = mcpServerEntry{
+	mcpServers["code-outline-graph-go"] = mcpServerEntry{
 		Command: binaryPath,
 		Args:    []string{"serve"},
 		Env:     map[string]string{},

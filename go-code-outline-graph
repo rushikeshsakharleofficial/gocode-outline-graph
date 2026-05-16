@@ -9,7 +9,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/rushikeshsakharleofficial/gocode-outline-graph.git"
-BINARY_NAME="code-outline-graph"
+BINARY_NAME="code-outline-graph-go"
 MIN_GO_MAJOR=1
 MIN_GO_MINOR=23
 

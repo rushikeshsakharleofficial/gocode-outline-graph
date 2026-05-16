@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "code-outline-graph-go": {
+      "command": "code-outline-graph-go",
+      "args": ["serve"],
+      "env": {}
+    }
+  }
+}

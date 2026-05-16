@@ -492,14 +492,28 @@ func cmdInstall(args []string) {
 	}
 
 	type configTarget struct {
-		label string
-		path  string
+		label   string
+		path    string
+		command string // override binary path; defaults to binaryPath
+	}
+
+	// Resolve project path for the local .mcp.json target.
+	projectMCPPath := ""
+	if rawPath := "."; true {
+		if abs, err2 := filepath.Abs(rawPath); err2 == nil {
+			projectMCPPath = filepath.Join(abs, ".mcp.json")
+		}
 	}
 
 	targets := []configTarget{
 		{
 			label: "Claude Code",
 			path:  filepath.Join(home, ".claude", "mcp.json"),
+		},
+		{
+			label:   "Project .mcp.json",
+			path:    projectMCPPath,
+			command: "code-outline-graph-go", // bare name — portable across machines
 		},
 		{
 			label: "Cursor",
@@ -515,19 +529,23 @@ func cmdInstall(args []string) {
 	stderrf("  %sBinary:%s %s%s%s\n\n", colorBold, colorReset, colorCyan, binaryPath, colorReset)
 
 	for _, t := range targets {
+		cmd := binaryPath
+		if t.command != "" {
+			cmd = t.command
+		}
 		displayPath := t.path
 		if strings.HasPrefix(displayPath, home) {
 			displayPath = "~" + displayPath[len(home):]
 		}
 
-		errMsg := mergeConfigFile(t.path, binaryPath)
+		errMsg := mergeConfigFile(t.path, cmd)
 		if errMsg != "" {
-			stderrf("  %s%-16s%s %s%s%s  %s✗ %s%s\n",
+			stderrf("  %s%-20s%s %s%s%s  %s✗ %s%s\n",
 				colorBold, t.label+":", colorReset,
 				colorDim, displayPath, colorReset,
 				colorRed, errMsg, colorReset)
 		} else {
-			stderrf("  %s%-16s%s %s%s%s  %s✓%s\n",
+			stderrf("  %s%-20s%s %s%s%s  %s✓%s\n",
 				colorBold, t.label+":", colorReset,
 				colorDim, displayPath, colorReset,
 				colorGreen, colorReset)

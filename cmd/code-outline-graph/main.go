@@ -127,7 +127,7 @@ func attachProgress(idx *indexer.Indexer) func() {
 	}
 	const barWidth = 30
 	var mu sync.Mutex
-	idx.OnProgress = func(done, total int) {
+	idx.OnProgress = func(done, total int, filePath string) {
 		pct := 0.0
 		if total > 0 {
 			pct = float64(done) / float64(total)
@@ -137,9 +137,16 @@ func attachProgress(idx *indexer.Indexer) func() {
 			filled = barWidth
 		}
 		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+		// Truncate filename to fit terminal — show only base name.
+		name := filepath.Base(filePath)
+		const nameWidth = 30
+		if len(name) > nameWidth {
+			name = "…" + name[len(name)-nameWidth+1:]
+		}
 		mu.Lock()
-		fmt.Fprintf(os.Stderr, "\r  %s[%s]%s %d/%d files",
-			colorDim, bar, colorReset, done, total)
+		fmt.Fprintf(os.Stderr, "\r  %s[%s]%s %d/%d  %s%-*s%s",
+			colorDim, bar, colorReset, done, total,
+			colorCyan, nameWidth, name, colorReset)
 		mu.Unlock()
 	}
 	return func() { fmt.Fprintln(os.Stderr) }

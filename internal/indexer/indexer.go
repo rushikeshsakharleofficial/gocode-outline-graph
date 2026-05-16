@@ -193,7 +193,7 @@ func matchSegments(segs, parts []string) bool {
 type Indexer struct {
 	database   *db.Database
 	workers    int
-	OnProgress func(done, total int) // called after each file; nil = no-op; must be goroutine-safe
+	OnProgress func(done, total int, filePath string) // called after each file; nil = no-op; must be goroutine-safe
 }
 
 // New creates a new Indexer. If workers <= 0, it defaults to min(cpu_count, 4).
@@ -325,7 +325,7 @@ func (idx *Indexer) IndexAll(projectPath string) (int, error) {
 				if err2 := idx.indexFileWithParser(filePath, p); err2 == nil {
 					n := int(atomic.AddInt64(&indexed, 1))
 					if idx.OnProgress != nil {
-						idx.OnProgress(n, total)
+						idx.OnProgress(n, total, filePath)
 					}
 				}
 			}

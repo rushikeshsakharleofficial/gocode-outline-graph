@@ -499,7 +499,7 @@ func cmdInstall(args []string) {
 	targets := []configTarget{
 		{
 			label: "Claude Code",
-			path:  filepath.Join(home, ".claude", "claude_desktop_config.json"),
+			path:  filepath.Join(home, ".claude", "mcp.json"),
 		},
 		{
 			label: "Cursor",

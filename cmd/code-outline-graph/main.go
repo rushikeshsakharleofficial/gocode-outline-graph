@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gocode-outline-graph/internal/db"
@@ -108,6 +109,45 @@ func openProjectDB(rawPath string) (string, *db.Database) {
 }
 
 // -------------------------------------------------------------------------
+// Progress bar
+// -------------------------------------------------------------------------
+
+// isTerminal reports whether f is an interactive terminal.
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+// attachProgress wires a terminal progress bar onto idx.OnProgress.
+// Returns a flush func that must be called after IndexAll to print a final newline.
+func attachProgress(idx *indexer.Indexer) func() {
+	if !isTerminal(os.Stderr) {
+		return func() {}
+	}
+	const barWidth = 30
+	var mu sync.Mutex
+	idx.OnProgress = func(done, total int) {
+		pct := 0.0
+		if total > 0 {
+			pct = float64(done) / float64(total)
+		}
+		filled := int(pct * float64(barWidth))
+		if filled > barWidth {
+			filled = barWidth
+		}
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+		mu.Lock()
+		fmt.Fprintf(os.Stderr, "\r  %s[%s]%s %d/%d files",
+			colorDim, bar, colorReset, done, total)
+		mu.Unlock()
+	}
+	return func() { fmt.Fprintln(os.Stderr) }
+}
+
+// -------------------------------------------------------------------------
 // Commands
 // -------------------------------------------------------------------------
 
@@ -125,8 +165,10 @@ func cmdBuild(args []string) {
 	stderrf("%s  Workers: %d%s\n", colorDim, f.workers, colorReset)
 
 	idx := indexer.New(database, f.workers)
+	flush := attachProgress(idx)
 	start := time.Now()
 	count, err := idx.IndexAll(projectPath)
+	flush()
 	if err != nil {
 		errorf("indexing error: %v", err)
 	}
@@ -167,7 +209,9 @@ func cmdUpdate(args []string) {
 
 	// IndexAll will skip up-to-date files (unless --force).
 	_ = f.force // future: pass force flag to indexer
+	flush := attachProgress(idx)
 	count, err := idx.IndexAll(projectPath)
+	flush()
 	if err != nil {
 		errorf("indexing error: %v", err)
 	}

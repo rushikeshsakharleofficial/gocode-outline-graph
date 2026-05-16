@@ -191,8 +191,9 @@ func matchSegments(segs, parts []string) bool {
 
 // Indexer orchestrates project and single-file indexing.
 type Indexer struct {
-	database *db.Database
-	workers  int
+	database   *db.Database
+	workers    int
+	OnProgress func(done, total int) // called after each file; nil = no-op; must be goroutine-safe
 }
 
 // New creates a new Indexer. If workers <= 0, it defaults to min(cpu_count, 4).
@@ -305,7 +306,8 @@ func (idx *Indexer) IndexAll(projectPath string) (int, error) {
 		return 0, nil
 	}
 
-	jobs := make(chan string, len(files))
+	total := len(files)
+	jobs := make(chan string, total)
 	for _, f := range files {
 		jobs <- f
 	}
@@ -321,7 +323,10 @@ func (idx *Indexer) IndexAll(projectPath string) (int, error) {
 			p := parser.New()
 			for filePath := range jobs {
 				if err2 := idx.indexFileWithParser(filePath, p); err2 == nil {
-					atomic.AddInt64(&indexed, 1)
+					n := int(atomic.AddInt64(&indexed, 1))
+					if idx.OnProgress != nil {
+						idx.OnProgress(n, total)
+					}
 				}
 			}
 		}()

@@ -22,6 +22,25 @@ green() { printf '\033[32m%s\033[0m\n' "$*"; }
 dim()   { printf '\033[2m%s\033[0m\n'  "$*"; }
 die()   { red "error: $*" >&2; exit 1; }
 
+# run_with_spinner CMD [ARGS...] — runs CMD in background, shows spinner, propagates exit code.
+run_with_spinner() {
+    local msg="$1"; shift
+    local spin='|/-\'
+    local i=0
+    "$@" &
+    local pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        local ch="${spin:$i:1}"
+        printf '\r\033[2m%s\033[0m %s' "$ch" "$msg" >&2
+        i=$(( (i + 1) % 4 ))
+        sleep 0.1
+    done
+    wait "$pid"
+    local code=$?
+    printf '\r\033[K' >&2
+    return $code
+}
+
 # ---------------------------------------------------------------------------
 # Resolve install prefix
 # ---------------------------------------------------------------------------
@@ -91,17 +110,21 @@ green "  git — ok"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-dim "Cloning $REPO_URL..."
-git clone --depth=1 --quiet "$REPO_URL" "$TMPDIR/src"
+run_with_spinner "Cloning $REPO_URL..." \
+    git clone --depth=1 --quiet "$REPO_URL" "$TMPDIR/src" \
+    || die "git clone failed"
+green "  Cloned"
 
-dim "Building (CGo + FTS5)..."
 cd "$TMPDIR/src"
-go build \
-    -buildvcs=false \
-    -tags fts5 \
-    -ldflags "-s -w" \
-    -o "$TMPDIR/$BINARY_NAME" \
-    ./cmd/code-outline-graph/
+run_with_spinner "Building (CGo + FTS5)..." \
+    go build \
+        -buildvcs=false \
+        -tags fts5 \
+        -ldflags "-s -w" \
+        -o "$TMPDIR/$BINARY_NAME" \
+        ./cmd/code-outline-graph/ \
+    || die "go build failed"
+green "  Built"
 
 # ---------------------------------------------------------------------------
 # Install

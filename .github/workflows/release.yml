@@ -12,25 +12,23 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    container:
+      # goreleaser-cross ships with ALL cross-compilers needed for CGo:
+      #   linux/amd64:  x86_64-linux-gnu-gcc
+      #   linux/arm64:  aarch64-linux-gnu-gcc
+      #   darwin/amd64: o64-clang  (osxcross)
+      #   darwin/arm64: oa64-clang (osxcross)
+      #   windows/amd64: x86_64-w64-mingw32-gcc
+      image: ghcr.io/goreleaser/goreleaser-cross:v1.24
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: goreleaser release --clean

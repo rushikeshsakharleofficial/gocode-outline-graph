@@ -89,3 +89,71 @@ func TestGetTopFilesWithCounts(t *testing.T) {
 		t.Errorf("unexpected second result: %+v", results[1])
 	}
 }
+
+func TestFilteredSearch_byKind(t *testing.T) {
+	d := openTestDB(t)
+	insertSymbols(t, d, "main.go", []db.Symbol{
+		{Name: "RunServer", Kind: "function", Language: "go", StartLine: 1, EndLine: 5},
+		{Name: "Config", Kind: "struct", Language: "go", StartLine: 10, EndLine: 20},
+	})
+	results, err := d.FilteredSearch("", "function", "", "", 20)
+	if err != nil {
+		t.Fatalf("FilteredSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].Name != "RunServer" {
+		t.Errorf("want [RunServer], got %v", results)
+	}
+}
+
+func TestFilteredSearch_byLanguage(t *testing.T) {
+	d := openTestDB(t)
+	insertSymbols(t, d, "main.go", []db.Symbol{
+		{Name: "GoFunc", Kind: "function", Language: "go"},
+	})
+	insertSymbols(t, d, "app.py", []db.Symbol{
+		{Name: "py_func", Kind: "function", Language: "python"},
+	})
+	results, err := d.FilteredSearch("", "", "python", "", 20)
+	if err != nil {
+		t.Fatalf("FilteredSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].Name != "py_func" {
+		t.Errorf("want [py_func], got %v", results)
+	}
+}
+
+func TestFilteredSearch_byFilePattern(t *testing.T) {
+	d := openTestDB(t)
+	insertSymbols(t, d, "/project/handlers/auth.go", []db.Symbol{
+		{Name: "Login", Kind: "function", Language: "go"},
+	})
+	insertSymbols(t, d, "/project/models/user.go", []db.Symbol{
+		{Name: "User", Kind: "struct", Language: "go"},
+	})
+	results, err := d.FilteredSearch("", "", "", "*/handlers/*", 20)
+	if err != nil {
+		t.Fatalf("FilteredSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].Name != "Login" {
+		t.Errorf("want [Login], got %v", results)
+	}
+}
+
+func TestFilteredSearch_queryWithKind(t *testing.T) {
+	d := openTestDB(t)
+	insertSymbols(t, d, "main.go", []db.Symbol{
+		{Name: "HandleRequest", Kind: "function", Language: "go", StartLine: 1, EndLine: 5,
+			Signature: "func HandleRequest(w http.ResponseWriter)"},
+		{Name: "RequestConfig", Kind: "struct", Language: "go", StartLine: 10, EndLine: 15},
+	})
+	// Query matches both, but kind filter restricts to function only.
+	results, err := d.FilteredSearch("Request", "function", "", "", 20)
+	if err != nil {
+		t.Fatalf("FilteredSearch: %v", err)
+	}
+	for _, s := range results {
+		if s.Kind != "function" {
+			t.Errorf("unexpected kind %q for %q", s.Kind, s.Name)
+		}
+	}
+}

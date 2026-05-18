@@ -405,27 +405,6 @@ func (d *Database) GetTopFilesWithCounts(limit int) ([]FileCount, error) {
 	return result, rows.Err()
 }
 
-// GetCallees returns callee names for a caller symbol ID.
-func (d *Database) GetCallees(callerID int64) ([]string, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	rows, err := d.db.Query(`SELECT callee_name FROM call_graph WHERE caller_id = ? ORDER BY callee_name`, callerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var callees []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		callees = append(callees, name)
-	}
-	return callees, rows.Err()
-}
 
 // GetCalleeSymbols returns resolved symbols and unresolved callee names for callerID.
 // Resolved: callees whose name matches a symbol in the index.
@@ -554,6 +533,92 @@ func (d *Database) keywordSearchLocked(query string, limit int) ([]Symbol, error
 	rows, err := d.db.Query(`SELECT `+symbolCols+` FROM symbols
 		WHERE name LIKE ? ESCAPE '\' OR signature LIKE ? ESCAPE '\' OR docstring LIKE ? ESCAPE '\'
 		LIMIT ?`, pattern, pattern, pattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectSymbols(rows)
+}
+
+// FilteredSearch searches symbols by query and optional kind/language/filePattern filters.
+// When all filters are empty and a query is set, delegates to FTS with keyword fallback.
+// filePattern uses SQLite GLOB syntax (e.g. "*/handlers/*.go").
+func (d *Database) FilteredSearch(query, kind, language, filePattern string, limit int) ([]Symbol, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	hasFilters := kind != "" || language != "" || filePattern != ""
+
+	// FTS path (with or without filters).
+	if query != "" {
+		ftsQuery := buildFTSQuery(query)
+		var (
+			rows *sql.Rows
+			err  error
+		)
+		if hasFilters {
+			rows, err = d.db.Query(`
+				SELECT s.`+symbolCols+`
+				FROM symbols_fts fts
+				JOIN symbols s ON s.id = fts.rowid
+				WHERE symbols_fts MATCH ?
+				AND (? = '' OR s.kind = ?)
+				AND (? = '' OR s.language = ?)
+				AND (? = '' OR s.file_path GLOB ?)
+				ORDER BY rank
+				LIMIT ?`,
+				ftsQuery,
+				kind, kind,
+				language, language,
+				filePattern, filePattern,
+				limit)
+		} else {
+			rows, err = d.db.Query(`
+				SELECT s.`+symbolCols+`
+				FROM symbols_fts fts
+				JOIN symbols s ON s.id = fts.rowid
+				WHERE symbols_fts MATCH ?
+				ORDER BY rank
+				LIMIT ?`, ftsQuery, limit)
+		}
+		if err == nil {
+			defer rows.Close()
+			syms, serr := collectSymbols(rows)
+			if serr == nil && len(syms) > 0 {
+				return syms, nil
+			}
+		}
+	}
+
+	// Keyword LIKE fallback with optional filters.
+	var clauses []string
+	var qargs []interface{}
+
+	if query != "" {
+		pattern := "%" + escapeLike(query) + "%"
+		clauses = append(clauses, `(name LIKE ? ESCAPE '\' OR signature LIKE ? ESCAPE '\')`)
+		qargs = append(qargs, pattern, pattern)
+	}
+	if kind != "" {
+		clauses = append(clauses, `kind = ?`)
+		qargs = append(qargs, kind)
+	}
+	if language != "" {
+		clauses = append(clauses, `language = ?`)
+		qargs = append(qargs, language)
+	}
+	if filePattern != "" {
+		clauses = append(clauses, `file_path GLOB ?`)
+		qargs = append(qargs, filePattern)
+	}
+
+	where := ""
+	if len(clauses) > 0 {
+		where = " WHERE " + strings.Join(clauses, " AND ")
+	}
+	qargs = append(qargs, limit)
+
+	rows, err := d.db.Query(`SELECT `+symbolCols+` FROM symbols`+where+` LIMIT ?`, qargs...)
 	if err != nil {
 		return nil, err
 	}

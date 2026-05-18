@@ -116,7 +116,9 @@ func (w *CodeWatcher) handleEvent(event fsnotify.Event) {
 	// If a new directory was created, add it to the watcher immediately.
 	if op&fsnotify.Create != 0 {
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
-			_ = w.watcher.Add(path)
+			if err := w.watcher.Add(path); err != nil {
+				log.Printf("watcher: add dir %q: %v", path, err)
+			}
 			return
 		}
 	}

@@ -133,15 +133,17 @@ func allTools() []Tool {
 		},
 		{
 			Name:        "find_by_keyword",
-			Description: "Full-text / keyword search across symbol names and signatures.",
+			Description: "Full-text / keyword search across symbol names and signatures. Optional filters narrow by kind, language, or file glob.",
 			InputSchema: ToolSchema{
 				Type: "object",
 				Properties: map[string]PropSchema{
-					"query":        {Type: "string", Description: "Search query"},
+					"query":        {Type: "string", Description: "Search query (leave empty to match all when using filters)"},
 					"limit":        {Type: "integer", Description: "Maximum results to return (default 20)"},
 					"project_path": {Type: "string", Description: "Project root"},
+					"kind":         {Type: "string", Description: "Optional symbol kind filter: function, class, method, struct, interface, type, constant, module, enum, decorator"},
+					"language":     {Type: "string", Description: "Optional language filter (e.g. 'go', 'python', 'typescript')"},
+					"file_pattern": {Type: "string", Description: "Optional SQLite GLOB pattern for file_path (e.g. '*/handlers/*.go')"},
 				},
-				Required: []string{"query"},
 			},
 		},
 		{
@@ -655,6 +657,9 @@ func handleFindByKeyword(raw json.RawMessage) interface{} {
 		Query       string `json:"query"`
 		Limit       int    `json:"limit"`
 		ProjectPath string `json:"project_path"`
+		Kind        string `json:"kind"`
+		Language    string `json:"language"`
+		FilePattern string `json:"file_pattern"`
 	}
 	args.Limit = 20
 	if raw != nil {
@@ -664,8 +669,8 @@ func handleFindByKeyword(raw json.RawMessage) interface{} {
 		args.Limit = 20
 	}
 
-	if args.Query == "" {
-		return toolError("query is required")
+	if args.Query == "" && args.Kind == "" && args.Language == "" && args.FilePattern == "" {
+		return toolError("query is required when no filters are specified")
 	}
 
 	projectPath := args.ProjectPath
@@ -673,18 +678,14 @@ func handleFindByKeyword(raw json.RawMessage) interface{} {
 		return toolError("project_path is required")
 	}
 
-	_, _, srch, err := GetComponents(projectPath)
+	database, _, _, err := GetComponents(projectPath)
 	if err != nil {
 		return toolError("init components: %v", err)
 	}
 
-	results, err := srch.FTSSearch(args.Query, args.Limit)
-	if err != nil || len(results) == 0 {
-		// Fall back to keyword (LIKE) search.
-		results, err = srch.KeywordSearch(args.Query, args.Limit)
-		if err != nil {
-			return toolError("keyword search: %v", err)
-		}
+	results, err := database.FilteredSearch(args.Query, args.Kind, args.Language, args.FilePattern, args.Limit)
+	if err != nil {
+		return toolError("search: %v", err)
 	}
 
 	if len(results) == 0 {

@@ -343,107 +343,127 @@ func cmdStatus(args []string) {
 }
 
 // skillContent is the SKILL.md embedded at build time.
-// Users run `code-outline-graph-go install-skill` to install it.
-const skillContent = `# code-outline-graph-go Skill
+// Users run `code-outline-graph install-skill` to install it.
+const skillContent = `---
+name: code-outline-graph-go
+description: Use when working in any indexed codebase — before reading files, searching for symbols, tracing call chains, or understanding code structure. Prevents wasteful whole-file reads.
+---
 
-**MANDATORY: Use this before any file read, grep, or search operation.**
+# code-outline-graph-go
 
-## Hard Rule
+Symbol index over source code. Find and read only what you need — 10x–50x fewer tokens than reading files.
 
-` + "```" + `
-NEVER use Read/Grep/Glob on source files without first checking the outline index.
-` + "```" + `
+## When to Use vs. When NOT to Use
 
-If you're about to read a file → STOP → use ` + "`list_outline`" + ` or ` + "`find_by_keyword`" + ` first.
+**DO NOT use when:**
+- File is already loaded in this conversation
+- File is non-source: ` + "`.json`, `.yaml`, `.html`, `.css`, `.md`, `.sql`" + ` — not indexed
+- You need runtime behavior, not code structure
+- You just wrote a new file — run ` + "`update_project`" + ` first, then use tools
+- Simple grep (exact string match) is faster than a symbol lookup
+
+**ALWAYS use when:**
+- About to open any source file → find the symbol first, read only its body
+- Tracing who calls a function, or what a function calls
+- Getting a project overview before diving in
+- Locating all symbols of a given kind (all interfaces, all structs)
 
 ---
 
-## The Confirm-Before-Read Protocol
+## The One Rule
 
 ` + "```" + `
-Step 1 — Find (no body, just metadata):
-  find_by_keyword({"query": "authentication middleware", "project_path": "."})
-  → [{name: "authenticate", file: "auth.go", start: 45, end: 89,
-      signature: "func authenticate(token string) (*User, error)"}]
-
-Step 2 — Confirm (pick correct candidate from signatures)
-
-Step 3 — Read ONLY that body:
-  read_symbol_body({"name": "authenticate", "file_path": "auth.go", "project_path": "."})
-  → 44 lines instead of 300-line file
+About to Read a file? STOP.
+find_by_keyword → confirm signature → read_symbol_body
 ` + "```" + `
-
-Token savings: 10x–50x per edit.
 
 ---
 
-## Tool Reference
+## Tool Decision Table
 
-| What you need | Tool to use |
-|---|---|
-| Find function/class to edit | ` + "`find_by_keyword({\"query\": \"...\", \"project_path\": \".\"})`" + ` |
-| Read one function body | ` + "`read_symbol_body({\"name\": \"...\", \"file_path\": \"...\", \"project_path\": \".\"})`" + ` |
-| All symbols in file | ` + "`list_outline({\"file_path\": \"...\", \"project_path\": \".\"})`" + ` |
-| Project overview | ` + "`get_outline_summary({\"project_path\": \".\"})`" + ` |
-| Imports + top of file | ` + "`get_file_header({\"file_path\": \"...\", \"project_path\": \".\"})`" + ` |
-| Exact symbol metadata | ` + "`get_symbol({\"name\": \"...\", \"project_path\": \".\"})`" + ` |
-| Read specific lines | ` + "`get_line_range({\"file_path\": \"...\", \"start_line\": N, \"end_line\": M})`" + ` |
-| Who calls a function? | ` + "`find_callers({\"name\": \"...\", \"project_path\": \".\"})`" + ` |
-| What does a function call? | ` + "`find_callees({\"symbol_name\": \"...\", \"project_path\": \".\"})`" + ` |
-| Index a project | ` + "`index_project({\"project_path\": \".\"})`" + ` |
-| Reindex changed files | ` + "`update_project({\"project_path\": \".\"})`" + ` |
-| Remove stale entries | ` + "`prune_project({\"project_path\": \".\"})`" + ` |
+| Situation | Tool |
+|-----------|------|
+| Know exact name | ` + "`get_symbol`" + ` |
+| Know approximate concept | ` + "`find_by_keyword`" + ` |
+| All symbols of one kind (functions, structs, interfaces) | ` + "`find_by_kind`" + ` |
+| All symbols in a file | ` + "`list_outline`" + ` |
+| All indexed files | ` + "`list_files`" + ` |
+| Imports / file header | ` + "`get_file_header`" + ` |
+| Read one function body | ` + "`read_symbol_body`" + ` |
+| Read body + surrounding context | ` + "`read_symbol_body`" + ` with ` + "`context_lines: 5`" + ` |
+| Read arbitrary lines | ` + "`get_line_range`" + ` |
+| Who calls function X? | ` + "`find_callers`" + ` |
+| What does function X call? | ` + "`find_callees`" + ` |
+| Project overview (file count, top files) | ` + "`get_outline_summary`" + ` |
+| First time using a project | ` + "`index_project`" + ` |
+| After editing files | ` + "`update_project`" + ` |
+| Files disappeared from disk | ` + "`prune_project`" + ` |
 
 ---
 
-## Patterns by Task
+## Power Patterns
 
-### Editing a function
+### Find with precision (use filters!)
 ` + "```" + `
-find_by_keyword({"query": "user login handler", "project_path": "."})
-→ pick from candidates using signatures
-read_symbol_body({"name": "Login", "file_path": "handlers/auth.go", "project_path": "."})
-→ edit with exact line range from start_line/end_line
+find_by_keyword({
+  "query": "auth",
+  "kind": "function",
+  "language": "go",
+  "file_pattern": "*/handlers/*",
+  "project_path": "."
+})
 ` + "```" + `
 
-### Tracing a call chain
+### Multi-match disambiguation
+` + "```" + `
+get_symbol({"name": "Handler", "project_path": "."})
+// returns array when multiple packages define Handler
+// returns object when unique (backward compat)
+` + "```" + `
+
+### Read with context
+` + "```" + `
+read_symbol_body({"name": "Login", "file_path": "auth.go",
+                  "context_lines": 5, "project_path": "."})
+` + "```" + `
+
+### Impact analysis before editing
 ` + "```" + `
 find_callers({"name": "InsertSymbolsForFile", "project_path": "."})
-→ every function that calls this one
+→ every caller with file:line — know scope before touching anything
+` + "```" + `
 
+### Discover all types / interfaces
+` + "```" + `
+find_by_kind({"kind": "interface", "language": "go", "project_path": "."})
+→ all interfaces (max 200)
+` + "```" + `
+
+### Call chain trace
+` + "```" + `
 find_callees({"symbol_name": "IndexAll", "project_path": "."})
-→ everything IndexAll calls
-` + "```" + `
-
-### Project overview before diving in
-` + "```" + `
-get_outline_summary({"project_path": "."})
-→ file count, symbol count, top files by density
+→ resolved: file:line for each internal callee
+→ unresolved: external/stdlib calls listed separately
 ` + "```" + `
 
 ---
 
-## After Every Code Change
-
-**MANDATORY:** After editing or creating any source file, run:
+## After Every Edit
 
 ` + "```" + `
 update_project({"project_path": "."})
 ` + "```" + `
 
+Without this, the index is stale and tools return old results.
+
 ---
 
-## CLI Commands (terminal)
+## Supported Languages
 
-` + "```bash\n" + `code-outline-graph-go build .          # full index
-code-outline-graph-go update .         # reindex changed files
-code-outline-graph-go search . <query> # search from terminal
-code-outline-graph-go outline . <file> # show file symbols
-code-outline-graph-go status .         # index stats
-code-outline-graph-go serve            # start MCP server (stdio)
-code-outline-graph-go install          # write MCP configs for editors
-code-outline-graph-go install-skill    # install this skill to ~/.claude/skills/
-` + "```\n`"
+python, javascript, typescript, tsx, go, rust, java, c, cpp, ruby, bash
+
+Other extensions (.json, .yaml, .html, etc.) are NOT indexed — use Read directly for those.
+` + "`"
 
 func cmdInstallSkill(_ []string) {
 	home, err := os.UserHomeDir()

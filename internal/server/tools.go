@@ -637,6 +637,9 @@ func handleReadSymbolBody(raw json.RawMessage) interface{} {
 		targetFile = filePath
 	}
 
+	if args.ContextLines < 0 {
+		args.ContextLines = 0
+	}
 	startLine := sym.StartLine - args.ContextLines
 	if startLine < 1 {
 		startLine = 1
@@ -950,15 +953,19 @@ func handleListFiles(raw json.RawMessage) interface{} {
 	}
 
 	if args.FilePattern != "" {
+		// Validate pattern before iterating.
+		if _, err := filepath.Match(args.FilePattern, ""); err != nil {
+			return toolError("invalid file_pattern %q: %v", args.FilePattern, err)
+		}
 		var filtered []string
 		for _, f := range files {
 			// Try matching full path first.
-			if matched, err := filepath.Match(args.FilePattern, f); err == nil && matched {
+			if matched, _ := filepath.Match(args.FilePattern, f); matched {
 				filtered = append(filtered, f)
 				continue
 			}
 			// Also match against base name for patterns like "*.go".
-			if matched, err := filepath.Match(args.FilePattern, filepath.Base(f)); err == nil && matched {
+			if matched, _ := filepath.Match(args.FilePattern, filepath.Base(f)); matched {
 				filtered = append(filtered, f)
 			}
 		}

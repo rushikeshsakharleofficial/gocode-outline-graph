@@ -31,6 +31,35 @@ func insertSymbols(t *testing.T, d *db.Database, filePath string, syms []db.Symb
 	}
 }
 
+func TestGetCalleeSymbols(t *testing.T) {
+	d := openTestDB(t)
+
+	insertSymbols(t, d, "caller.go", []db.Symbol{
+		{Name: "MyFunc", Kind: "function", Language: "go", StartLine: 1, EndLine: 5,
+			Calls: []string{"HelperA", "externalPkg.Thing"}},
+	})
+	insertSymbols(t, d, "helper.go", []db.Symbol{
+		{Name: "HelperA", Kind: "function", Language: "go", StartLine: 1, EndLine: 3},
+	})
+
+	caller, err := d.GetSymbolByName("MyFunc", "caller.go")
+	if err != nil || caller == nil {
+		t.Fatalf("get caller: %v", err)
+	}
+
+	resolved, unresolved, err := d.GetCalleeSymbols(caller.ID)
+	if err != nil {
+		t.Fatalf("GetCalleeSymbols: %v", err)
+	}
+
+	if len(resolved) != 1 || resolved[0].Name != "HelperA" {
+		t.Errorf("want 1 resolved (HelperA), got %v", resolved)
+	}
+	if len(unresolved) != 1 || unresolved[0] != "externalPkg.Thing" {
+		t.Errorf("want 1 unresolved (externalPkg.Thing), got %v", unresolved)
+	}
+}
+
 func TestGetTopFilesWithCounts(t *testing.T) {
 	d := openTestDB(t)
 

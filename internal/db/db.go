@@ -427,6 +427,51 @@ func (d *Database) GetCallees(callerID int64) ([]string, error) {
 	return callees, rows.Err()
 }
 
+// GetCalleeSymbols returns resolved symbols and unresolved callee names for callerID.
+// Resolved: callees whose name matches a symbol in the index.
+// Unresolved: callee names with no matching symbol (external/stdlib).
+func (d *Database) GetCalleeSymbols(callerID int64) (resolved []Symbol, unresolved []string, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	rows, err := d.db.Query(`
+		SELECT DISTINCT s.`+symbolCols+`
+		FROM call_graph cg
+		JOIN symbols s ON s.name = cg.callee_name
+		WHERE cg.caller_id = ?
+		ORDER BY s.file_path, s.start_line`, callerID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	resolved, err = collectSymbols(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resolvedNames := make(map[string]bool, len(resolved))
+	for _, s := range resolved {
+		resolvedNames[s.Name] = true
+	}
+
+	nameRows, err := d.db.Query(
+		`SELECT callee_name FROM call_graph WHERE caller_id = ? ORDER BY callee_name`, callerID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer nameRows.Close()
+	for nameRows.Next() {
+		var n string
+		if err := nameRows.Scan(&n); err != nil {
+			return nil, nil, err
+		}
+		if !resolvedNames[n] {
+			unresolved = append(unresolved, n)
+		}
+	}
+	return resolved, unresolved, nameRows.Err()
+}
+
 // GetCallersByName returns all symbols that call the given function name.
 func (d *Database) GetCallersByName(calleeName string) ([]Symbol, error) {
 	d.mu.Lock()

@@ -845,19 +845,25 @@ func handleFindCallees(raw json.RawMessage) interface{} {
 		return textResult(fmt.Sprintf(`{"error":"not_found","name":%q}`, args.SymbolName))
 	}
 
-	callees, err := database.GetCallees(sym.ID)
+	resolved, unresolved, err := database.GetCalleeSymbols(sym.ID)
 	if err != nil {
 		return toolError("get callees: %v", err)
 	}
 
-	if len(callees) == 0 {
+	if len(resolved) == 0 && len(unresolved) == 0 {
 		return textResult(fmt.Sprintf("No callees found for %q", args.SymbolName))
 	}
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Callees of %q:\n", args.SymbolName)
-	for _, name := range callees {
-		fmt.Fprintf(&sb, "  %s\n", name)
+	for _, s := range resolved {
+		fmt.Fprintf(&sb, "  %s:%d %s %s\n", s.FilePath, s.StartLine, s.Kind, s.Name)
+		if s.Signature != "" {
+			fmt.Fprintf(&sb, "    %s\n", s.Signature)
+		}
+	}
+	for _, name := range unresolved {
+		fmt.Fprintf(&sb, "  (unresolved) %s\n", name)
 	}
 	return textResult(sb.String())
 }

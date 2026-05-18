@@ -4,6 +4,7 @@ package watcher
 import (
 	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -111,6 +112,14 @@ func (w *CodeWatcher) eventLoop() {
 func (w *CodeWatcher) handleEvent(event fsnotify.Event) {
 	path := event.Name
 	op := event.Op
+
+	// If a new directory was created, add it to the watcher immediately.
+	if op&fsnotify.Create != 0 {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			_ = w.watcher.Add(path)
+			return
+		}
+	}
 
 	// Only process files we can parse.
 	if !parser.IsSupported(path) {

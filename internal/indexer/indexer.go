@@ -389,7 +389,7 @@ func (idx *Indexer) EnsureFresh(filePath string) error {
 		// File may have been deleted; leave DB cleanup to RemoveStale.
 		return nil
 	}
-	if idx.database.IsFileCurrent(filePath, info.Size(), info.ModTime().UnixNano()) {
+	if !idx.Force && idx.database.IsFileCurrent(filePath, info.Size(), info.ModTime().UnixNano()) {
 		return nil
 	}
 	return idx.IndexFile(filePath)

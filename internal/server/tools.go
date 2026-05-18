@@ -218,6 +218,19 @@ func allTools() []Tool {
 				Required: []string{"kind", "project_path"},
 			},
 		},
+		{
+			Name:        "resolve_edit_target",
+			Description: "Find the best edit targets for a natural-language query. Returns top candidates ranked by hybrid FTS+keyword search with Reciprocal Rank Fusion (RRF). Use this to locate what to edit before making changes.",
+			InputSchema: ToolSchema{
+				Type: "object",
+				Properties: map[string]PropSchema{
+					"query":        {Type: "string", Description: "Natural language description of what you want to edit"},
+					"project_path": {Type: "string", Description: "Project root (used to locate the index)"},
+					"limit":        {Type: "integer", Description: "Number of candidates to return (default 5)"},
+				},
+				Required: []string{"query"},
+			},
+		},
 	}
 }
 
@@ -272,6 +285,8 @@ func callTool(params json.RawMessage) interface{} {
 		return handleListFiles(p.Arguments)
 	case "find_by_kind":
 		return handleFindByKind(p.Arguments)
+	case "resolve_edit_target":
+		return handleResolveEditTarget(p.Arguments)
 	default:
 		return &Response{
 			JSONRPC: "2.0",
@@ -1017,6 +1032,52 @@ func handleFindByKind(raw json.RawMessage) interface{} {
 		fmt.Fprintf(&sb, "  %s:%d %s\n", s.FilePath, s.StartLine, s.Name)
 		if s.Signature != "" {
 			fmt.Fprintf(&sb, "    %s\n", s.Signature)
+		}
+	}
+	return textResult(sb.String())
+}
+
+// 15. resolve_edit_target
+func handleResolveEditTarget(raw json.RawMessage) interface{} {
+	var args struct {
+		Query       string `json:"query"`
+		ProjectPath string `json:"project_path"`
+		Limit       int    `json:"limit"`
+	}
+	if raw != nil {
+		json.Unmarshal(raw, &args) //nolint:errcheck
+	}
+
+	if args.Query == "" {
+		return toolError("query is required")
+	}
+	if args.ProjectPath == "" {
+		args.ProjectPath = "."
+	}
+	if args.Limit <= 0 {
+		args.Limit = 5
+	}
+
+	_, _, srch, err := GetComponents(args.ProjectPath)
+	if err != nil {
+		return toolError("init components: %v", err)
+	}
+
+	results, err := srch.ResolveEditTarget(args.Query, args.Limit)
+	if err != nil {
+		return toolError("resolve edit target: %v", err)
+	}
+
+	if len(results) == 0 {
+		return textResult(fmt.Sprintf("No edit targets found for %q", args.Query))
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Top %d edit targets for %q:\n\n", len(results), args.Query)
+	for i, s := range results {
+		fmt.Fprintf(&sb, "%d. %s %s\n   %s:%d-%d\n", i+1, s.Kind, s.Name, s.FilePath, s.StartLine, s.EndLine)
+		if s.Signature != "" {
+			fmt.Fprintf(&sb, "   %s\n", s.Signature)
 		}
 	}
 	return textResult(sb.String())

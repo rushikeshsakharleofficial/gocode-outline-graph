@@ -313,3 +313,214 @@ jobs:
           git add code-outline-graph-go.json
           git commit -m "Update code-outline-graph-go to ${VERSION}"
           git push
+
+  # ── 4. Publish APT / RPM / APK package repositories ─────────────────────────
+  publish-repos:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          merge-multiple: true
+          path: release-assets/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: release-assets/
+        continue-on-error: true
+
+      - name: Install repo tools
+        run: |
+          sudo apt-get install -y \
+            dpkg-dev \
+            createrepo-c \
+            apt-utils
+
+      - name: Clone packages repo
+        env:
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          git clone \
+            "https://x-access-token:${PACKAGES_TOKEN}@github.com/rushikeshsakharleofficial/packages.git" \
+            packages-repo
+
+      - name: Build APT repository
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          PKGREPO=packages-repo
+
+          mkdir -p "${PKGREPO}/apt/pool/main"
+          mkdir -p "${PKGREPO}/apt/dists/stable/main/binary-amd64"
+
+          # Copy .deb into pool
+          cp release-assets/*.deb "${PKGREPO}/apt/pool/main/" || true
+
+          # Generate Packages index
+          (cd "${PKGREPO}/apt" && dpkg-scanpackages pool/main /dev/null 2>/dev/null \
+            > dists/stable/main/binary-amd64/Packages)
+          gzip -9 -k "${PKGREPO}/apt/dists/stable/main/binary-amd64/Packages"
+
+          # Generate Release
+          cat > "${PKGREPO}/apt/dists/stable/Release" << RELEASE
+          Origin: rushikeshsakharleofficial
+          Label: rushikesh packages
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: Package repository for rushikeshsakharleofficial tools
+          RELEASE
+
+          # Checksums for Release
+          (cd "${PKGREPO}/apt/dists/stable" && \
+            md5sum main/binary-amd64/Packages main/binary-amd64/Packages.gz >> Release && \
+            sha256sum main/binary-amd64/Packages main/binary-amd64/Packages.gz >> Release)
+
+          echo "APT repo built:"
+          ls -lh "${PKGREPO}/apt/dists/stable/main/binary-amd64/"
+
+      - name: Build RPM repository
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          PKGREPO=packages-repo
+
+          mkdir -p "${PKGREPO}/rpm/x86_64"
+
+          # Copy RPM packages
+          cp release-assets/*.rpm "${PKGREPO}/rpm/x86_64/" || true
+
+          # Generate repodata
+          createrepo_c "${PKGREPO}/rpm/x86_64/"
+
+          # Write .repo file
+          cat > "${PKGREPO}/rpm/rushikesh.repo" << REPOFILE
+          [rushikesh]
+          name=Rushikesh Sakharle - Tools
+          baseurl=https://rushikeshsakharleofficial.github.io/packages/rpm/x86_64/
+          enabled=1
+          gpgcheck=0
+          type=rpm
+          REPOFILE
+
+          echo "RPM repo built:"
+          ls -lh "${PKGREPO}/rpm/x86_64/"
+
+      - name: Build APK repository index
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          PKGREPO=packages-repo
+
+          mkdir -p "${PKGREPO}/apk/edge/main/x86_64"
+
+          # Copy APK packages
+          cp release-assets/*.apk "${PKGREPO}/apk/edge/main/x86_64/" || true
+
+          # Generate a simple APKINDEX (without signing — users use --allow-untrusted or add key)
+          # Install apk-tools for proper index generation
+          sudo apt-get install -y apk-tools 2>/dev/null || true
+
+          if command -v apk &>/dev/null; then
+            (cd "${PKGREPO}/apk/edge/main/x86_64" && \
+              apk index -o APKINDEX.tar.gz *.apk 2>/dev/null || true)
+          else
+            # Fallback: create a minimal APKINDEX manually
+            for f in "${PKGREPO}"/apk/edge/main/x86_64/*.apk; do
+              [ -f "$f" ] || continue
+              BNAME=$(basename "$f")
+              echo "C:$(sha256sum "$f" | awk '{print $1}')"
+              echo "P:code-outline-graph-go"
+              echo "V:${VER}-r0"
+              echo "A:x86_64"
+              echo "T:Go code indexing and search MCP server"
+              echo "U:https://github.com/rushikeshsakharleofficial/gocode-outline-graph"
+              echo "L:MIT"
+              echo ""
+            done > /tmp/APKINDEX
+
+            gzip -9 -c /tmp/APKINDEX > "${PKGREPO}/apk/edge/main/x86_64/APKINDEX.tar.gz" || \
+              tar czf "${PKGREPO}/apk/edge/main/x86_64/APKINDEX.tar.gz" /tmp/APKINDEX 2>/dev/null || true
+          fi
+
+          echo "APK dir:"
+          ls -lh "${PKGREPO}/apk/edge/main/x86_64/"
+
+      - name: Update packages repo README with latest version
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          cat > packages-repo/README.md << README
+          # Package Repository
+
+          Package repository for [rushikeshsakharleofficial](https://github.com/rushikeshsakharleofficial) tools.
+          Hosted at: \`https://rushikeshsakharleofficial.github.io/packages/\`
+
+          **Latest version: ${VERSION}**
+
+          ---
+
+          ## code-outline-graph-go
+
+          Go code indexing and search MCP server.
+
+          ### Debian / Ubuntu (apt)
+
+          \`\`\`bash
+          echo "deb [trusted=yes arch=amd64] https://rushikeshsakharleofficial.github.io/packages/apt stable main" \\
+            | sudo tee /etc/apt/sources.list.d/rushikesh.list
+          sudo apt update
+          sudo apt install code-outline-graph-go
+          \`\`\`
+
+          ### RHEL / Fedora / CentOS (dnf/yum)
+
+          \`\`\`bash
+          sudo curl -fsSL https://rushikeshsakharleofficial.github.io/packages/rpm/rushikesh.repo \\
+            -o /etc/yum.repos.d/rushikesh.repo
+          sudo dnf install code-outline-graph-go
+          # or: sudo yum install code-outline-graph-go
+          \`\`\`
+
+          ### openSUSE (zypper)
+
+          \`\`\`bash
+          sudo zypper addrepo https://rushikeshsakharleofficial.github.io/packages/rpm/rushikesh.repo
+          sudo zypper install code-outline-graph-go
+          \`\`\`
+
+          ### Alpine Linux (apk)
+
+          \`\`\`bash
+          echo "https://rushikeshsakharleofficial.github.io/packages/apk/edge/main" \\
+            | sudo tee -a /etc/apk/repositories
+          sudo apk update --allow-untrusted
+          sudo apk add code-outline-graph-go --allow-untrusted
+          \`\`\`
+
+          ### Any platform (install script)
+
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/rushikeshsakharleofficial/gocode-outline-graph/main/install.sh | bash
+          \`\`\`
+          README
+
+      - name: Push to packages repo
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          cd packages-repo
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -m "Update packages for ${VERSION}" || echo "Nothing to commit"
+          git push

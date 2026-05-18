@@ -1,0 +1,6 @@
+[rushikesh]
+name=Rushikesh Sakharle - Tools
+baseurl=https://rushikeshsakharleofficial.github.io/packages/rpm/x86_64/
+enabled=1
+gpgcheck=0
+type=rpm

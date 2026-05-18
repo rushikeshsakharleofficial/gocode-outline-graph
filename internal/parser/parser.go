@@ -8,14 +8,33 @@ import (
 	"github.com/smacker/go-tree-sitter/bash"
 	"github.com/smacker/go-tree-sitter/c"
 	"github.com/smacker/go-tree-sitter/cpp"
+	"github.com/smacker/go-tree-sitter/csharp"
+	"github.com/smacker/go-tree-sitter/css"
+	"github.com/smacker/go-tree-sitter/dockerfile"
+	"github.com/smacker/go-tree-sitter/elixir"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/groovy"
+	"github.com/smacker/go-tree-sitter/hcl"
+	"github.com/smacker/go-tree-sitter/html"
 	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/kotlin"
+	"github.com/smacker/go-tree-sitter/lua"
+	tree_sitter_markdown "github.com/smacker/go-tree-sitter/markdown/tree-sitter-markdown"
+	"github.com/smacker/go-tree-sitter/ocaml"
+	"github.com/smacker/go-tree-sitter/php"
+	"github.com/smacker/go-tree-sitter/protobuf"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/ruby"
 	"github.com/smacker/go-tree-sitter/rust"
+	"github.com/smacker/go-tree-sitter/scala"
+	"github.com/smacker/go-tree-sitter/sql"
+	"github.com/smacker/go-tree-sitter/svelte"
+	"github.com/smacker/go-tree-sitter/swift"
+	"github.com/smacker/go-tree-sitter/toml"
 	tstyp "github.com/smacker/go-tree-sitter/typescript/typescript"
 	"github.com/smacker/go-tree-sitter/typescript/tsx"
+	"github.com/smacker/go-tree-sitter/yaml"
 
 	"gocode-outline-graph/internal/db"
 )
@@ -29,6 +48,7 @@ type SymbolParser struct {
 // New creates a SymbolParser. Each goroutine must call New() independently.
 func New() *SymbolParser {
 	langs := map[string]*sitter.Language{
+		// Original languages
 		"python":     python.GetLanguage(),
 		"javascript": javascript.GetLanguage(),
 		"typescript": tstyp.GetLanguage(),
@@ -40,6 +60,30 @@ func New() *SymbolParser {
 		"cpp":        cpp.GetLanguage(),
 		"ruby":       ruby.GetLanguage(),
 		"bash":       bash.GetLanguage(),
+		// Systems
+		"csharp": csharp.GetLanguage(),
+		"php":    php.GetLanguage(),
+		"swift":  swift.GetLanguage(),
+		"kotlin": kotlin.GetLanguage(),
+		"scala":  scala.GetLanguage(),
+		// Config
+		"yaml":  yaml.GetLanguage(),
+		"toml":  toml.GetLanguage(),
+		"hcl":   hcl.GetLanguage(),
+		"proto": protobuf.GetLanguage(),
+		// Web
+		"html":   html.GetLanguage(),
+		"css":    css.GetLanguage(),
+		"svelte": svelte.GetLanguage(),
+		// Scripting
+		"lua":    lua.GetLanguage(),
+		"elixir": elixir.GetLanguage(),
+		"groovy": groovy.GetLanguage(),
+		"ocaml":  ocaml.GetLanguage(),
+		// Markup / infra
+		"markdown":   tree_sitter_markdown.GetLanguage(),
+		"sql":        sql.GetLanguage(),
+		"dockerfile": dockerfile.GetLanguage(),
 	}
 	sp := &SymbolParser{parsers: make(map[string]*sitter.Parser, len(langs))}
 	for name, lang := range langs {
@@ -52,6 +96,18 @@ func New() *SymbolParser {
 
 // Parse extracts symbols from src for the given language. Returns nil for unsupported languages.
 func (sp *SymbolParser) Parse(filePath string, src []byte, language string) []db.Symbol {
+	// JSON uses stdlib encoding/json, not tree-sitter.
+	if language == "json" {
+		return walkJSONBytes(src, filePath)
+	}
+
+	// Fallback languages use line-based extraction — no tree-sitter grammar available.
+	switch language {
+	case "dart", "zig", "clojure", "erlang", "haskell", "nix", "fish",
+		"perl", "r", "powershell", "batch", "graphql", "xml", "make":
+		return walkLineBased(src, filePath, language)
+	}
+
 	p, ok := sp.parsers[language]
 	if !ok {
 		return nil
@@ -65,6 +121,7 @@ func (sp *SymbolParser) Parse(filePath string, src []byte, language string) []db
 		return nil
 	}
 	switch language {
+	// Original
 	case "python":
 		return walkPython(root, src, filePath, "")
 	case "javascript":
@@ -85,6 +142,49 @@ func (sp *SymbolParser) Parse(filePath string, src []byte, language string) []db
 		return walkRuby(root, src, filePath, "")
 	case "bash":
 		return walkBash(root, src, filePath)
+	// Systems
+	case "csharp":
+		return walkCSharp(root, src, filePath, "")
+	case "php":
+		return walkPHP(root, src, filePath, "")
+	case "swift":
+		return walkSwift(root, src, filePath, "")
+	case "kotlin":
+		return walkKotlin(root, src, filePath, "")
+	case "scala":
+		return walkScala(root, src, filePath, "")
+	// Config
+	case "yaml":
+		return walkYAML(root, src, filePath)
+	case "toml":
+		return walkTOML(root, src, filePath)
+	case "hcl":
+		return walkHCL(root, src, filePath)
+	case "proto":
+		return walkProto(root, src, filePath, "")
+	// Web
+	case "html":
+		return walkHTML(root, src, filePath)
+	case "css":
+		return walkCSS(root, src, filePath)
+	case "svelte":
+		return walkSvelte(root, src, filePath)
+	// Scripting
+	case "lua":
+		return walkLua(root, src, filePath, "")
+	case "elixir":
+		return walkElixir(root, src, filePath, "")
+	case "groovy":
+		return walkGroovy(root, src, filePath, "")
+	case "ocaml":
+		return walkOCaml(root, src, filePath, "")
+	// Markup / infra
+	case "markdown":
+		return walkMarkdown(root, src, filePath)
+	case "sql":
+		return walkSQL(root, src, filePath)
+	case "dockerfile":
+		return walkDockerfile(root, src, filePath)
 	}
 	return nil
 }

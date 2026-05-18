@@ -1,0 +1,18 @@
+PackageIdentifier: rushikeshsakharleofficial.code-outline-graph-go
+PackageVersion: 1.1.0
+PackageName: code-outline-graph-go
+Publisher: Rushikesh Sakharle
+PublisherUrl: https://github.com/rushikeshsakharleofficial
+License: MIT
+LicenseUrl: https://github.com/rushikeshsakharleofficial/gocode-outline-graph/blob/main/LICENSE
+ShortDescription: Go code indexing and search MCP server
+Description: Parses source files with tree-sitter, stores symbols in SQLite FTS5, and exposes the index as an MCP server over stdio. Supports python, javascript, typescript, tsx, go, rust, java, c, cpp, ruby, bash.
+PackageUrl: https://github.com/rushikeshsakharleofficial/gocode-outline-graph
+Tags:
+  - code-search
+  - mcp
+  - tree-sitter
+  - sqlite
+  - developer-tools
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

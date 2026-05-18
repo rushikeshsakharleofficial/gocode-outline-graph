@@ -1,0 +1,22 @@
+# Maintainer: Rushikesh Sakharle <ramsharath@instantly.ai>
+pkgname=code-outline-graph-go-bin
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Go code indexing and search MCP server — tree-sitter symbols over SQLite FTS5"
+arch=('x86_64' 'aarch64')
+url="https://github.com/rushikeshsakharleofficial/gocode-outline-graph"
+license=('MIT')
+provides=('code-outline-graph-go')
+conflicts=('code-outline-graph-go')
+
+source_x86_64=("code-outline-graph-go-${pkgver}-x86_64.tar.gz::https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v${pkgver}/code-outline-graph-go_${pkgver}_linux_amd64.tar.gz")
+source_aarch64=("code-outline-graph-go-${pkgver}-aarch64.tar.gz::https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v${pkgver}/code-outline-graph-go_${pkgver}_linux_arm64.tar.gz")
+
+# Update these checksums after each release using:
+#   updpkgsums
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+    install -Dm755 "code-outline-graph-go" "${pkgdir}/usr/bin/code-outline-graph-go"
+}

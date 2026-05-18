@@ -1,0 +1,27 @@
+{
+  "version": "1.1.0",
+  "description": "Go code indexing and search MCP server — tree-sitter symbols over SQLite FTS5",
+  "homepage": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v1.1.0/code-outline-graph-go_1.1.0_windows_amd64.zip",
+      "hash": "sha256:PLACEHOLDER_FILLED_BY_GORELEASER",
+      "bin": "code-outline-graph-go.exe"
+    }
+  },
+  "checkver": {
+    "github": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v$version/code-outline-graph-go_$version_windows_amd64.zip",
+        "hash": {
+          "url": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v$version/checksums.txt",
+          "regex": "([a-f0-9]{64})\\s+code-outline-graph-go_$version_windows_amd64.zip"
+        }
+      }
+    }
+  }
+}

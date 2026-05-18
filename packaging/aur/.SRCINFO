@@ -1,0 +1,16 @@
+pkgbase = code-outline-graph-go-bin
+	pkgdesc = Go code indexing and search MCP server — tree-sitter symbols over SQLite FTS5
+	pkgver = 1.1.0
+	pkgrel = 1
+	url = https://github.com/rushikeshsakharleofficial/gocode-outline-graph
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	provides = code-outline-graph-go
+	conflicts = code-outline-graph-go
+	source_x86_64 = code-outline-graph-go-1.1.0-x86_64.tar.gz::https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v1.1.0/code-outline-graph-go_1.1.0_linux_amd64.tar.gz
+	sha256sums_x86_64 = SKIP
+	source_aarch64 = code-outline-graph-go-1.1.0-aarch64.tar.gz::https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v1.1.0/code-outline-graph-go_1.1.0_linux_arm64.tar.gz
+	sha256sums_aarch64 = SKIP
+
+pkgname = code-outline-graph-go-bin

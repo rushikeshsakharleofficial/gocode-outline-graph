@@ -1,0 +1,17 @@
+PackageIdentifier: rushikeshsakharleofficial.code-outline-graph-go
+PackageVersion: 1.1.0
+Platform:
+  - Windows.Desktop
+MinimumOSVersion: "10.0.0.0"
+InstallerType: zip
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v1.1.0/code-outline-graph-go_1.1.0_windows_amd64.zip
+    InstallerSha256: PLACEHOLDER_FILLED_AFTER_RELEASE
+    InstallerLocale: en-US
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: code-outline-graph-go.exe
+        PortableCommandAlias: code-outline-graph-go
+ManifestType: installer
+ManifestVersion: 1.6.0

@@ -1,0 +1,39 @@
+# nfpm.yml — standalone nfpm config for building deb/rpm/apk locally.
+# Usage:
+#   nfpm pkg --packager deb --target ./dist/
+#   nfpm pkg --packager rpm --target ./dist/
+#   nfpm pkg --packager apk --target ./dist/
+#   nfpm pkg --packager archlinux --target ./dist/
+
+name: code-outline-graph-go
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: Rushikesh Sakharle <ramsharath@instantly.ai>
+description: |
+  Go code indexing and search MCP server.
+  Parses source files with tree-sitter, stores symbols in SQLite FTS5,
+  and exposes the index as an MCP server over stdio.
+  Supports: python, javascript, typescript, tsx, go, rust, java, c, cpp, ruby, bash
+vendor: Rushikesh Sakharle
+homepage: https://github.com/rushikeshsakharleofficial/gocode-outline-graph
+license: MIT
+
+contents:
+  - src: ../code-outline-graph-go
+    dst: /usr/bin/code-outline-graph-go
+    file_info:
+      mode: 0755
+
+overrides:
+  deb:
+    dependencies:
+      - libc6
+  rpm:
+    dependencies:
+      - glibc
+  apk:
+    dependencies:
+      - musl

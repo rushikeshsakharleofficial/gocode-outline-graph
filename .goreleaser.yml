@@ -1,0 +1,181 @@
+version: 2
+
+project_name: code-outline-graph-go
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: code-outline-graph-go
+    main: ./cmd/code-outline-graph/
+    binary: code-outline-graph-go
+    flags:
+      - -buildvcs=false
+    tags:
+      - fts5
+    ldflags:
+      - -s -w
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=x86_64-linux-gnu-gcc
+          - CXX=x86_64-linux-gnu-g++
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - CXX=aarch64-linux-gnu-g++
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CC=o64-clang
+          - CXX=o64-clang++
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CC=oa64-clang
+          - CXX=oa64-clang++
+      - goos: windows
+        goarch: amd64
+        env:
+          - CC=x86_64-w64-mingw32-gcc
+          - CXX=x86_64-w64-mingw32-g++
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+nfpms:
+  - id: linux-packages
+    package_name: code-outline-graph-go
+    vendor: Rushikesh Sakharle
+    homepage: https://github.com/rushikeshsakharleofficial/gocode-outline-graph
+    maintainer: Rushikesh Sakharle <ramsharath@instantly.ai>
+    description: Go code indexing and search MCP server — tree-sitter symbol extraction over SQLite FTS5
+    license: MIT
+    builds:
+      - code-outline-graph-go
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    bindir: /usr/bin
+    contents:
+      - src: ./packaging/completions/code-outline-graph-go.bash
+        dst: /etc/bash_completion.d/code-outline-graph-go
+        type: config|noreplace
+        file_info:
+          mode: 0644
+        packager: deb
+      - src: ./packaging/completions/code-outline-graph-go.bash
+        dst: /etc/bash_completion.d/code-outline-graph-go
+        type: config|noreplace
+        file_info:
+          mode: 0644
+        packager: rpm
+    overrides:
+      deb:
+        dependencies:
+          - libc6
+      rpm:
+        dependencies:
+          - glibc
+      apk:
+        dependencies:
+          - musl
+
+brews:
+  - repository:
+      owner: rushikeshsakharleofficial
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    name: code-outline-graph-go
+    homepage: https://github.com/rushikeshsakharleofficial/gocode-outline-graph
+    description: Go code indexing and search MCP server — tree-sitter symbol extraction over SQLite FTS5
+    license: MIT
+    install: |
+      bin.install "code-outline-graph-go"
+    test: |
+      system "#{bin}/code-outline-graph-go", "version"
+
+scoops:
+  - repository:
+      owner: rushikeshsakharleofficial
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    name: code-outline-graph-go
+    homepage: https://github.com/rushikeshsakharleofficial/gocode-outline-graph
+    description: Go code indexing and search MCP server
+    license: MIT
+
+release:
+  github:
+    owner: rushikeshsakharleofficial
+    name: gocode-outline-graph
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  footer: |
+    ## Installation
+
+    ### macOS (Homebrew)
+    ```bash
+    brew tap rushikeshsakharleofficial/tap
+    brew install code-outline-graph-go
+    ```
+
+    ### Windows (Scoop)
+    ```powershell
+    scoop bucket add rushikesh https://github.com/rushikeshsakharleofficial/scoop-bucket
+    scoop install code-outline-graph-go
+    ```
+
+    ### Linux (deb/rpm/apk)
+    Download the appropriate package below, or use the [install script](https://raw.githubusercontent.com/rushikeshsakharleofficial/gocode-outline-graph/main/install.sh):
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/rushikeshsakharleofficial/gocode-outline-graph/main/install.sh | bash
+    ```
+
+    ### Arch Linux (AUR)
+    ```bash
+    yay -S code-outline-graph-go-bin
+    # or
+    paru -S code-outline-graph-go-bin
+    ```
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch

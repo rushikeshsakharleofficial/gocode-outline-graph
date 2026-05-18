@@ -744,7 +744,7 @@ func main() {
 	case "install-skill":
 		cmdInstallSkill(os.Args[2:])
 	case "version":
-		fmt.Println("code-outline-graph-go version 1.1.0 (Go)")
+		fmt.Println("code-outline-graph-go version 1.1.1 (Go)")
 	default:
 		fmt.Fprintf(os.Stderr, "%sunknown command: %s%s\n", colorRed, command, colorReset)
 		printUsage()

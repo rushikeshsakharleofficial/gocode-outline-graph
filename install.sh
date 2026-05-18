@@ -64,11 +64,11 @@ curl -fsSL -o "${TMP}/checksums.txt" "${CHECKSUM_URL}"
   || { echo "Checksum verification failed"; exit 1; }
 
 # Extract
+mkdir -p "${TMP}/bin"
 if [[ "$EXT" == "zip" ]]; then
   unzip -q "${TMP}/${FILENAME}" -d "${TMP}/bin"
 else
-  tar -xzf "${TMP}/${FILENAME}" -C "${TMP}/bin" --strip-components=0 2>/dev/null \
-    || tar -xzf "${TMP}/${FILENAME}" -C "${TMP}/bin"
+  tar -xzf "${TMP}/${FILENAME}" -C "${TMP}/bin"
 fi
 
 # Install

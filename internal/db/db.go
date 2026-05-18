@@ -374,6 +374,37 @@ func (d *Database) GetTopFiles(limit int) ([]string, error) {
 	return files, rows.Err()
 }
 
+// FileCount pairs a file path with its symbol count.
+type FileCount struct {
+	Path  string
+	Count int
+}
+
+// GetTopFilesWithCounts returns the top files by symbol count, descending, with counts.
+func (d *Database) GetTopFilesWithCounts(limit int) ([]FileCount, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	rows, err := d.db.Query(
+		`SELECT file_path, COUNT(*) AS cnt FROM symbols GROUP BY file_path ORDER BY cnt DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []FileCount
+	for rows.Next() {
+		var fc FileCount
+		if err := rows.Scan(&fc.Path, &fc.Count); err != nil {
+			return nil, err
+		}
+		result = append(result, fc)
+	}
+	return result, rows.Err()
+}
+
 // GetCallees returns callee names for a caller symbol ID.
 func (d *Database) GetCallees(callerID int64) ([]string, error) {
 	d.mu.Lock()

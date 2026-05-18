@@ -317,52 +317,27 @@ func cmdStatus(args []string) {
 	projectPath, database := openProjectDB(rawPath)
 	dbPath := paths.ProjectDBPath(projectPath)
 
-	s := search.New(database)
-
-	// Get an overall symbol count and per-file breakdown via broad search.
-	allSymbols, err := s.KeywordSearch("", 10000)
+	fileCount, symbolCount, err := database.GetFileStats()
 	if err != nil {
 		errorf("status error: %v", err)
 	}
 
-	// Count unique files and accumulate per-file symbol counts.
-	fileCount := map[string]int{}
-	for _, sym := range allSymbols {
-		fileCount[sym.FilePath]++
-	}
-
-	// Build a sorted top-files list (simple insertion into a top-10 slice).
-	type fileStat struct {
-		path  string
-		count int
-	}
-	var topFiles []fileStat
-	for fp, cnt := range fileCount {
-		topFiles = append(topFiles, fileStat{fp, cnt})
-	}
-	// Sort descending by count (bubble sort is fine for <=10000 entries at status time).
-	for i := 0; i < len(topFiles); i++ {
-		for j := i + 1; j < len(topFiles); j++ {
-			if topFiles[j].count > topFiles[i].count {
-				topFiles[i], topFiles[j] = topFiles[j], topFiles[i]
-			}
-		}
-	}
-	if len(topFiles) > 10 {
-		topFiles = topFiles[:10]
+	topFiles, err := database.GetTopFilesWithCounts(10)
+	if err != nil {
+		errorf("status error: %v", err)
 	}
 
 	fmt.Printf("%sProject:%s  %s%s%s\n", colorBold, colorReset, colorCyan, projectPath, colorReset)
 	fmt.Printf("%sDatabase:%s %s%s%s\n", colorBold, colorReset, colorDim, dbPath, colorReset)
-	fmt.Printf("%sFiles indexed:%s  %s%d%s\n", colorBold, colorReset, colorGreen, len(fileCount), colorReset)
-	fmt.Printf("%sTotal symbols:%s  %s%d%s\n", colorBold, colorReset, colorGreen, len(allSymbols), colorReset)
+	fmt.Printf("%sFiles indexed:%s  %s%d%s\n", colorBold, colorReset, colorGreen, fileCount, colorReset)
+	fmt.Printf("%sTotal symbols:%s  %s%d%s\n", colorBold, colorReset, colorGreen, symbolCount, colorReset)
 
 	if len(topFiles) > 0 {
 		fmt.Printf("\n%sTop files by symbol count:%s\n", colorBold, colorReset)
-		for _, fs := range topFiles {
+		for _, f := range topFiles {
 			fmt.Printf("  %s%-50s%s %s(%d symbols)%s\n",
-				colorCyan, fs.path, colorReset,
-				colorDim, fs.count, colorReset)
+				colorCyan, f.Path, colorReset,
+				colorDim, f.Count, colorReset)
 		}
 	}
 }

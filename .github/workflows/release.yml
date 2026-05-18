@@ -7,28 +7,309 @@ on:
 
 permissions:
   contents: write
-  packages: write
+
+env:
+  BINARY: code-outline-graph-go
+  GO_FLAGS: "-buildvcs=false -tags fts5 -ldflags=-s -w"
 
 jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
-    container:
-      # goreleaser-cross ships with ALL cross-compilers needed for CGo:
-      #   linux/amd64:  x86_64-linux-gnu-gcc
-      #   linux/arm64:  aarch64-linux-gnu-gcc
-      #   darwin/amd64: o64-clang  (osxcross)
-      #   darwin/arm64: oa64-clang (osxcross)
-      #   windows/amd64: x86_64-w64-mingw32-gcc
-      image: ghcr.io/goreleaser/goreleaser-cross:v1.24
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+  # ── 1. Build binaries (native CGo per platform) ─────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            apt: gcc-aarch64-linux-gnu
+            cc: aarch64-linux-gnu-gcc
+            ext: ""
+          - os: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            apt: gcc-mingw-w64-x86-64
+            cc: x86_64-w64-mingw32-gcc
+            ext: ".exe"
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            ext: ""
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install cross-compiler
+        if: matrix.apt != ''
+        run: sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Build
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc || '' }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          OUTNAME="${BINARY}_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p dist
+          go build ${{ env.GO_FLAGS }} \
+            -o "dist/${BINARY}${{ matrix.ext }}" \
+            ./cmd/code-outline-graph/
+
+          # Package into archive
+          cd dist
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${OUTNAME}.zip" "${BINARY}.exe"
+          else
+            tar czf "${OUTNAME}.tar.gz" "${BINARY}"
+          fi
+          ls -lh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.tar.gz dist/*.zip
+          if-no-files-found: error
+
+  # ── 2. Build Linux packages (deb / rpm / apk) ───────────────────────────────
+  packages:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bin-linux-amd64
+          path: dist/
+
+      - name: Extract linux/amd64 binary
+        run: |
+          cd dist
+          ARCHIVE=$(ls *.tar.gz | head -1)
+          tar xf "$ARCHIVE"
+          ls -lh
+
+      - name: Install nfpm
+        run: |
+          NFPM_VERSION=2.37.1
+          wget -qO /tmp/nfpm.deb \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Build packages
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          mkdir -p packages
+
+          # nfpm reads binary from current dir; copy it
+          cp dist/code-outline-graph-go .
+
+          for FMT in deb rpm apk; do
+            VERSION="$VER" nfpm pkg \
+              --config packaging/nfpm.yml \
+              --packager "$FMT" \
+              --target packages/
+          done
+
+          # archlinux package (using nfpm)
+          VERSION="$VER" nfpm pkg \
+            --config packaging/nfpm.yml \
+            --packager archlinux \
+            --target packages/ || true  # non-fatal if packager unavailable
+
+          ls -lh packages/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: packages/
+          if-no-files-found: warn
+
+  # ── 3. Create GitHub Release ────────────────────────────────────────────────
+  release:
+    needs: [build, packages]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run GoReleaser
-        run: goreleaser release --clean
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          merge-multiple: true
+          path: release-assets/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: release-assets/
+        continue-on-error: true
+
+      - name: Generate checksums
+        run: |
+          cd release-assets
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          gh release create "${VERSION}" \
+            --title "${VERSION}" \
+            --notes "$(cat <<'NOTES'
+          ## Installation
+
+          ### macOS (Homebrew)
+          ```bash
+          brew tap rushikeshsakharleofficial/tap
+          brew install code-outline-graph-go
+          ```
+
+          ### Windows (Scoop)
+          ```powershell
+          scoop bucket add rushikesh https://github.com/rushikeshsakharleofficial/scoop-bucket
+          scoop install code-outline-graph-go
+          ```
+
+          ### Linux / macOS / Windows (install script)
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/rushikeshsakharleofficial/gocode-outline-graph/main/install.sh | bash
+          ```
+
+          ### Arch Linux (AUR)
+          ```bash
+          yay -S code-outline-graph-go-bin
+          ```
+          NOTES
+          )" \
+            release-assets/*
+
+      - name: Update Homebrew formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+
+          # Compute checksums for darwin and linux archives
+          SHA_DARWIN_AMD64=$(sha256sum release-assets/code-outline-graph-go_${VER}_darwin_amd64.tar.gz | awk '{print $1}')
+          SHA_DARWIN_ARM64=$(sha256sum release-assets/code-outline-graph-go_${VER}_darwin_arm64.tar.gz | awk '{print $1}')
+          SHA_LINUX_AMD64=$(sha256sum release-assets/code-outline-graph-go_${VER}_linux_amd64.tar.gz | awk '{print $1}')
+          SHA_LINUX_ARM64=$(sha256sum release-assets/code-outline-graph-go_${VER}_linux_arm64.tar.gz | awk '{print $1}')
+
+          # Clone tap, update formula, push
+          git clone \
+            "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/rushikeshsakharleofficial/homebrew-tap.git" \
+            tap-repo
+          cat > tap-repo/Formula/code-outline-graph-go.rb << FORMULA
+          class CodeOutlineGraphGo < Formula
+            desc "Go code indexing and search MCP server — tree-sitter symbols over SQLite FTS5"
+            homepage "https://github.com/rushikeshsakharleofficial/gocode-outline-graph"
+            license "MIT"
+            version "${VER}"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/${VERSION}/code-outline-graph-go_${VER}_darwin_arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/${VERSION}/code-outline-graph-go_${VER}_darwin_amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/${VERSION}/code-outline-graph-go_${VER}_linux_arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/${VERSION}/code-outline-graph-go_${VER}_linux_amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              bin.install "code-outline-graph-go"
+            end
+
+            test do
+              assert_match "${VER}", shell_output("#{bin}/code-outline-graph-go version")
+            end
+          end
+          FORMULA
+
+          cd tap-repo
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add Formula/code-outline-graph-go.rb
+          git commit -m "Update code-outline-graph-go to ${VERSION}"
+          git push
+
+      - name: Update Scoop manifest
+        env:
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          SHA_WIN=$(sha256sum release-assets/code-outline-graph-go_${VER}_windows_amd64.zip | awk '{print $1}')
+
+          git clone \
+            "https://x-access-token:${SCOOP_BUCKET_TOKEN}@github.com/rushikeshsakharleofficial/scoop-bucket.git" \
+            scoop-repo
+          cat > scoop-repo/code-outline-graph-go.json << JSON
+          {
+            "version": "${VER}",
+            "description": "Go code indexing and search MCP server — tree-sitter symbols over SQLite FTS5",
+            "homepage": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph",
+            "license": "MIT",
+            "architecture": {
+              "64bit": {
+                "url": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/${VERSION}/code-outline-graph-go_${VER}_windows_amd64.zip",
+                "hash": "${SHA_WIN}",
+                "bin": "code-outline-graph-go.exe"
+              }
+            },
+            "checkver": {
+              "github": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph"
+            },
+            "autoupdate": {
+              "architecture": {
+                "64bit": {
+                  "url": "https://github.com/rushikeshsakharleofficial/gocode-outline-graph/releases/download/v\$version/code-outline-graph-go_\$version_windows_amd64.zip"
+                }
+              }
+            }
+          }
+          JSON
+
+          cd scoop-repo
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add code-outline-graph-go.json
+          git commit -m "Update code-outline-graph-go to ${VERSION}"
+          git push

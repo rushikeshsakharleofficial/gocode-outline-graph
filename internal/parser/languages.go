@@ -7,8 +7,8 @@ import (
 )
 
 // extensionMap maps lowercase file extensions (with leading dot) to tree-sitter language names.
-// Only contains extensions whose language has a case in Parse().
 var extensionMap = map[string]string{
+	// Already supported
 	".py":   "python",
 	".js":   "javascript",
 	".mjs":  "javascript",
@@ -29,12 +29,78 @@ var extensionMap = map[string]string{
 	".rb":   "ruby",
 	".sh":   "bash",
 	".bash": "bash",
+	// Systems languages
+	".cs":     "csharp",
+	".php":    "php",
+	".swift":  "swift",
+	".kt":     "kotlin",
+	".kts":    "kotlin",
+	".scala":  "scala",
+	// Config / data
+	".yaml":   "yaml",
+	".yml":    "yaml",
+	".toml":   "toml",
+	".tf":     "hcl",
+	".hcl":    "hcl",
+	".proto":  "proto",
+	".json":   "json",
+	// Web
+	".html":   "html",
+	".htm":    "html",
+	".css":    "css",
+	".scss":   "css",
+	".sass":   "css",
+	".less":   "css",
+	".svelte": "svelte",
+	".vue":    "svelte",
+	// Scripting / functional
+	".lua":    "lua",
+	".ex":     "elixir",
+	".exs":    "elixir",
+	".groovy": "groovy",
+	".gradle": "groovy",
+	".ml":     "ocaml",
+	".mli":    "ocaml",
+	// Markup
+	".md":    "markdown",
+	".mdx":   "markdown",
+	".sql":   "sql",
+	// Fallback languages (line-based extraction)
+	".dart":    "dart",
+	".zig":     "zig",
+	".clj":     "clojure",
+	".cljs":    "clojure",
+	".cljc":    "clojure",
+	".erl":     "erlang",
+	".hrl":     "erlang",
+	".hs":      "haskell",
+	".lhs":     "haskell",
+	".nix":     "nix",
+	".fish":    "fish",
+	".pl":      "perl",
+	".pm":      "perl",
+	".t":       "perl",
+	".r":       "r",
+	".R":       "r",
+	".ps1":     "powershell",
+	".psm1":    "powershell",
+	".bat":     "batch",
+	".cmd":     "batch",
+	".graphql": "graphql",
+	".gql":     "graphql",
+	".xml":     "xml",
+	".mk":      "make",
 }
 
 // basenameMap maps exact filenames (no path, case-sensitive) to language names.
 var basenameMap = map[string]string{
-	"Dockerfile": "dockerfile",
-	"dockerfile": "dockerfile",
+	"Dockerfile":      "dockerfile",
+	"dockerfile":      "dockerfile",
+	"Dockerfile.dev":  "dockerfile",
+	"Dockerfile.prod": "dockerfile",
+	"Makefile":        "make",
+	"makefile":        "make",
+	"GNUmakefile":     "make",
 }
 
 // DetectLanguage returns the tree-sitter language name for a given file path.

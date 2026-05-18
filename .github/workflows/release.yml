@@ -10,7 +10,6 @@ permissions:
 
 env:
   BINARY: code-outline-graph-go
-  GO_FLAGS: "-buildvcs=false -tags fts5 -ldflags=-s -w"
 
 jobs:
   # ── 1. Build binaries (native CGo per platform) ─────────────────────────────
@@ -68,7 +67,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           OUTNAME="${BINARY}_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}"
           mkdir -p dist
-          go build ${{ env.GO_FLAGS }} \
+          go build -buildvcs=false -tags fts5 -ldflags="-s -w" \
             -o "dist/${BINARY}${{ matrix.ext }}" \
             ./cmd/code-outline-graph/
 

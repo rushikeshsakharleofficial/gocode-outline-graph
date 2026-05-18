@@ -199,7 +199,7 @@ func initResult() map[string]interface{} {
 		"capabilities":    map[string]interface{}{"tools": map[string]interface{}{}},
 		"serverInfo": map[string]interface{}{
 			"name":    "code-outline-graph",
-			"version": "1.0.0",
+			"version": "1.1.0",
 		},
 	}
 }

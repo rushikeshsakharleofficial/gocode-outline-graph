@@ -193,6 +193,7 @@ func matchSegments(segs, parts []string) bool {
 type Indexer struct {
 	database   *db.Database
 	workers    int
+	Force      bool                                   // if true, bypass freshness and checksum fast-paths
 	OnProgress func(done, total int, filePath string) // called after each file; nil = no-op; must be goroutine-safe
 }
 
@@ -355,8 +356,8 @@ func (idx *Indexer) indexFileWithParser(filePath string, p *parser.SymbolParser)
 	size := info.Size()
 	mtimeNs := info.ModTime().UnixNano()
 
-	// Fast-path: skip if file hasn't changed.
-	if idx.database.IsFileCurrent(filePath, size, mtimeNs) {
+	// Fast-path: skip if file hasn't changed (unless Force is set).
+	if !idx.Force && idx.database.IsFileCurrent(filePath, size, mtimeNs) {
 		return nil
 	}
 
@@ -368,9 +369,11 @@ func (idx *Indexer) indexFileWithParser(filePath string, p *parser.SymbolParser)
 	checksum := checksumBytes(data)
 
 	// Double-check with checksum in case mtime was bumped without content change.
-	existing := idx.database.GetChecksumForFile(filePath)
-	if existing == checksum {
-		return nil
+	if !idx.Force {
+		existing := idx.database.GetChecksumForFile(filePath)
+		if existing == checksum {
+			return nil
+		}
 	}
 
 	lang := parser.DetectLanguage(filePath)

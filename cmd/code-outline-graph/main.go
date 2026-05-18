@@ -170,6 +170,7 @@ func cmdBuild(args []string) {
 	stderrf("%s  Workers: %d%s\n", colorDim, f.workers, colorReset)
 
 	idx := indexer.New(database, f.workers)
+	idx.Force = f.force
 	flush := attachProgress(idx)
 	start := time.Now()
 	count, err := idx.IndexAll(projectPath)
@@ -204,6 +205,7 @@ func cmdUpdate(args []string) {
 	stderrf("%s  Workers: %d%s\n", colorDim, f.workers, colorReset)
 
 	idx := indexer.New(database, f.workers)
+	idx.Force = f.force
 	start := time.Now()
 
 	// RemoveStale removes entries for deleted/moved files.
@@ -212,8 +214,6 @@ func cmdUpdate(args []string) {
 		errorf("prune error during update: %v", err)
 	}
 
-	// IndexAll will skip up-to-date files (unless --force).
-	_ = f.force // future: pass force flag to indexer
 	flush := attachProgress(idx)
 	count, err := idx.IndexAll(projectPath)
 	flush()

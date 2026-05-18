@@ -340,6 +340,52 @@ func (d *Database) GetSymbolByName(name, filePath string) (*Symbol, error) {
 	return scanSymbolRow(d.db.QueryRow(`SELECT `+symbolCols+` FROM symbols WHERE name = ? LIMIT 1`, name))
 }
 
+// GetSymbolsByName returns all symbols with the given name, optionally filtered by file.
+func (d *Database) GetSymbolsByName(name, filePath string) ([]Symbol, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var rows *sql.Rows
+	var err error
+	if filePath != "" {
+		rows, err = d.db.Query(
+			`SELECT `+symbolCols+` FROM symbols WHERE name = ? AND file_path = ? ORDER BY start_line`,
+			name, filePath)
+	} else {
+		rows, err = d.db.Query(
+			`SELECT `+symbolCols+` FROM symbols WHERE name = ? ORDER BY file_path, start_line`,
+			name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectSymbols(rows)
+}
+
+// GetSymbolsByKind returns all symbols of a given kind, optionally filtered by language.
+func (d *Database) GetSymbolsByKind(kind, language string, limit int) ([]Symbol, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var rows *sql.Rows
+	var err error
+	if language != "" {
+		rows, err = d.db.Query(
+			`SELECT `+symbolCols+` FROM symbols WHERE kind = ? AND language = ? ORDER BY file_path, start_line LIMIT ?`,
+			kind, language, limit)
+	} else {
+		rows, err = d.db.Query(
+			`SELECT `+symbolCols+` FROM symbols WHERE kind = ? ORDER BY file_path, start_line LIMIT ?`,
+			kind, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectSymbols(rows)
+}
+
 // GetFileStats returns indexed file count and total symbol count.
 func (d *Database) GetFileStats() (fileCount, symbolCount int, err error) {
 	d.mu.Lock()

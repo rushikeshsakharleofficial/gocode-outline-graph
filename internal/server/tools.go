@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gocode-outline-graph/internal/db"
 	"gocode-outline-graph/internal/watcher"
 )
 
@@ -97,9 +98,10 @@ func allTools() []Tool {
 			InputSchema: ToolSchema{
 				Type: "object",
 				Properties: map[string]PropSchema{
-					"name":         {Type: "string", Description: "Symbol name"},
-					"file_path":    {Type: "string", Description: "Source file containing the symbol"},
-					"project_path": {Type: "string", Description: "Project root"},
+					"name":          {Type: "string", Description: "Symbol name"},
+					"file_path":     {Type: "string", Description: "Source file containing the symbol"},
+					"project_path":  {Type: "string", Description: "Project root"},
+					"context_lines": {Type: "integer", Description: "Expand read range by N lines before start and after end (default 0)"},
 				},
 				Required: []string{"name"},
 			},
@@ -191,6 +193,31 @@ func allTools() []Tool {
 				Required: []string{"symbol_name"},
 			},
 		},
+		{
+			Name:        "list_files",
+			Description: "List all indexed file paths, optionally filtered by a glob pattern.",
+			InputSchema: ToolSchema{
+				Type: "object",
+				Properties: map[string]PropSchema{
+					"project_path": {Type: "string", Description: "Project root"},
+					"file_pattern": {Type: "string", Description: "Optional glob pattern (e.g. '*.go', '*/handlers/*')"},
+				},
+				Required: []string{"project_path"},
+			},
+		},
+		{
+			Name:        "find_by_kind",
+			Description: "Find all symbols of a given kind (function, class, method, struct, interface, type, constant, module, enum, decorator) across the project. Returns at most 200 results.",
+			InputSchema: ToolSchema{
+				Type: "object",
+				Properties: map[string]PropSchema{
+					"kind":         {Type: "string", Description: "Symbol kind: function, class, method, struct, interface, type, constant, module, enum, decorator"},
+					"project_path": {Type: "string", Description: "Project root"},
+					"language":     {Type: "string", Description: "Optional language filter (e.g. 'go', 'python')"},
+				},
+				Required: []string{"kind", "project_path"},
+			},
+		},
 	}
 }
 
@@ -241,6 +268,10 @@ func callTool(params json.RawMessage) interface{} {
 		return handleFindCallers(p.Arguments)
 	case "find_callees":
 		return handleFindCallees(p.Arguments)
+	case "list_files":
+		return handleListFiles(p.Arguments)
+	case "find_by_kind":
+		return handleFindByKind(p.Arguments)
 	default:
 		return &Response{
 			JSONRPC: "2.0",
@@ -515,34 +546,50 @@ func handleGetSymbol(raw json.RawMessage) interface{} {
 		}
 	}
 
-	sym, err := database.GetSymbolByName(args.Name, filePath)
+	syms, err := database.GetSymbolsByName(args.Name, filePath)
 	if err != nil {
 		return toolError("get symbol: %v", err)
 	}
-	if sym == nil {
+	if len(syms) == 0 {
 		return textResult(fmt.Sprintf(`{"error":"not_found","name":%q}`, args.Name))
 	}
 
-	out, _ := json.Marshal(map[string]interface{}{
-		"name":      sym.Name,
-		"kind":      sym.Kind,
-		"file_path": sym.FilePath,
-		"start_line": sym.StartLine,
-		"end_line":  sym.EndLine,
-		"signature": sym.Signature,
-		"docstring": sym.Docstring,
-		"parent":    sym.Parent,
-		"language":  sym.Language,
-	})
+	symToMap := func(s db.Symbol) map[string]interface{} {
+		return map[string]interface{}{
+			"name":       s.Name,
+			"kind":       s.Kind,
+			"file_path":  s.FilePath,
+			"start_line": s.StartLine,
+			"end_line":   s.EndLine,
+			"signature":  s.Signature,
+			"docstring":  s.Docstring,
+			"parent":     s.Parent,
+			"language":   s.Language,
+		}
+	}
+
+	// Single match or file_path specified → return object (backward compat).
+	if len(syms) == 1 || filePath != "" {
+		out, _ := json.Marshal(symToMap(syms[0]))
+		return textResult(string(out))
+	}
+
+	// Multiple matches → return array for disambiguation.
+	arr := make([]map[string]interface{}, len(syms))
+	for i, s := range syms {
+		arr[i] = symToMap(s)
+	}
+	out, _ := json.Marshal(arr)
 	return textResult(string(out))
 }
 
 // 5. read_symbol_body
 func handleReadSymbolBody(raw json.RawMessage) interface{} {
 	var args struct {
-		Name        string `json:"name"`
-		FilePath    string `json:"file_path"`
-		ProjectPath string `json:"project_path"`
+		Name         string `json:"name"`
+		FilePath     string `json:"file_path"`
+		ProjectPath  string `json:"project_path"`
+		ContextLines int    `json:"context_lines"`
 	}
 	if raw != nil {
 		json.Unmarshal(raw, &args) //nolint:errcheck
@@ -590,7 +637,13 @@ func handleReadSymbolBody(raw json.RawMessage) interface{} {
 		targetFile = filePath
 	}
 
-	body, err := readLinesNumbered(targetFile, sym.StartLine, sym.EndLine)
+	startLine := sym.StartLine - args.ContextLines
+	if startLine < 1 {
+		startLine = 1
+	}
+	endLine := sym.EndLine + args.ContextLines
+
+	body, err := readLinesNumbered(targetFile, startLine, endLine)
 	if err != nil {
 		return toolError("read file: %v", err)
 	}
@@ -689,7 +742,10 @@ func handleFindByKeyword(raw json.RawMessage) interface{} {
 	}
 
 	if len(results) == 0 {
-		return textResult(fmt.Sprintf("No symbols found for query: %q", args.Query))
+		if args.Query != "" {
+			return textResult(fmt.Sprintf("No symbols found for query: %q", args.Query))
+		}
+		return textResult("No symbols found matching the specified filters")
 	}
 
 	var sb strings.Builder
@@ -865,6 +921,96 @@ func handleFindCallees(raw json.RawMessage) interface{} {
 	}
 	for _, name := range unresolved {
 		fmt.Fprintf(&sb, "  (unresolved) %s\n", name)
+	}
+	return textResult(sb.String())
+}
+
+// 13. list_files
+func handleListFiles(raw json.RawMessage) interface{} {
+	var args struct {
+		ProjectPath string `json:"project_path"`
+		FilePattern string `json:"file_pattern"`
+	}
+	if raw != nil {
+		json.Unmarshal(raw, &args) //nolint:errcheck
+	}
+
+	if args.ProjectPath == "" {
+		return toolError("project_path is required")
+	}
+
+	database, _, _, err := GetComponents(args.ProjectPath)
+	if err != nil {
+		return toolError("init components: %v", err)
+	}
+
+	files, err := database.ListIndexedFiles()
+	if err != nil {
+		return toolError("list files: %v", err)
+	}
+
+	if args.FilePattern != "" {
+		var filtered []string
+		for _, f := range files {
+			// Try matching full path first.
+			if matched, err := filepath.Match(args.FilePattern, f); err == nil && matched {
+				filtered = append(filtered, f)
+				continue
+			}
+			// Also match against base name for patterns like "*.go".
+			if matched, err := filepath.Match(args.FilePattern, filepath.Base(f)); err == nil && matched {
+				filtered = append(filtered, f)
+			}
+		}
+		files = filtered
+	}
+
+	if len(files) == 0 {
+		return textResult("No indexed files found")
+	}
+	return textResult(strings.Join(files, "\n"))
+}
+
+// 14. find_by_kind
+func handleFindByKind(raw json.RawMessage) interface{} {
+	var args struct {
+		Kind        string `json:"kind"`
+		ProjectPath string `json:"project_path"`
+		Language    string `json:"language"`
+	}
+	if raw != nil {
+		json.Unmarshal(raw, &args) //nolint:errcheck
+	}
+
+	if args.Kind == "" {
+		return toolError("kind is required")
+	}
+	if args.ProjectPath == "" {
+		return toolError("project_path is required")
+	}
+
+	database, _, _, err := GetComponents(args.ProjectPath)
+	if err != nil {
+		return toolError("init components: %v", err)
+	}
+
+	const maxResults = 200
+	symbols, err := database.GetSymbolsByKind(args.Kind, args.Language, maxResults)
+	if err != nil {
+		return toolError("get symbols by kind: %v", err)
+	}
+
+	if len(symbols) == 0 {
+		return textResult(fmt.Sprintf("No %q symbols found", args.Kind))
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Symbols of kind %q (%d found):\n", args.Kind, len(symbols))
+	for _, s := range symbols {
+		fmt.Fprintf(&sb, "  %s:%d %s\n", s.FilePath, s.StartLine, s.Name)
+		if s.Signature != "" {
+			fmt.Fprintf(&sb, "    %s\n", s.Signature)
+		}
 	}
 	return textResult(sb.String())
 }

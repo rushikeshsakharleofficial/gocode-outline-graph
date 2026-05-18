@@ -515,6 +515,19 @@ func (d *Database) GetCallersByName(calleeName string) ([]Symbol, error) {
 	return collectSymbols(rows)
 }
 
+// GetAllSymbols returns all symbols ordered by file_path, start_line.
+func (d *Database) GetAllSymbols() ([]Symbol, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	rows, err := d.db.Query(`SELECT ` + symbolCols + ` FROM symbols ORDER BY file_path, start_line`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectSymbols(rows)
+}
+
 // FTSSearch performs FTS5 BM25-ranked search.
 func (d *Database) FTSSearch(query string, limit int) ([]Symbol, error) {
 	d.mu.Lock()

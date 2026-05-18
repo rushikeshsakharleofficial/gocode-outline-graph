@@ -510,6 +510,231 @@ func cmdPrune(args []string) {
 }
 
 // -------------------------------------------------------------------------
+// doctor command
+// -------------------------------------------------------------------------
+
+func cmdDoctor(args []string) {
+	positional, _ := parseFlags(args)
+	rawPath := "."
+	if len(positional) > 0 {
+		rawPath = positional[0]
+	}
+
+	projectPath, err := paths.ResolveProjectPath(rawPath)
+	if err != nil {
+		errorf("cannot resolve path: %v", err)
+	}
+
+	pass := func(label string) {
+		fmt.Printf("  %s✓%s %s\n", colorGreen, colorReset, label)
+	}
+	fail := func(label, reason string) {
+		fmt.Printf("  %s✗%s %s: %s\n", colorRed, colorReset, label, reason)
+	}
+
+	fmt.Printf("%sDoctor: %s%s\n", colorBold, projectPath, colorReset)
+	allOK := true
+
+	// 1. DB file exists
+	dbPath := paths.ProjectDBPath(projectPath)
+	if _, statErr := os.Stat(dbPath); statErr != nil {
+		fail("DB file", "not found at "+dbPath)
+		allOK = false
+	} else {
+		pass("DB file exists: " + dbPath)
+	}
+
+	// 2. DB open + integrity
+	database, dbErr := db.Open(dbPath)
+	if dbErr != nil {
+		fail("DB open", dbErr.Error())
+		allOK = false
+	} else {
+		defer database.Close()
+		fileCount, symbolCount, statsErr := database.GetFileStats()
+		if statsErr != nil {
+			fail("DB integrity", statsErr.Error())
+			allOK = false
+		} else {
+			pass(fmt.Sprintf("DB OK (%d files, %d symbols)", fileCount, symbolCount))
+		}
+	}
+
+	// 3. Parser initializes
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fail("Parser init", fmt.Sprintf("panic: %v", r))
+				allOK = false
+			}
+		}()
+		p := indexer.NewParser()
+		if p != nil {
+			pass("Parser initialized for all languages")
+		}
+	}()
+
+	// 4. MCP config
+	mcpJSON := filepath.Join(projectPath, ".mcp.json")
+	if _, statErr := os.Stat(mcpJSON); statErr == nil {
+		pass("MCP config: .mcp.json found")
+	} else {
+		fail("MCP config", ".mcp.json not found (run: code-outline-graph-go install .)")
+		allOK = false
+	}
+
+	if !allOK {
+		fmt.Printf("\n%s✗ Some checks failed.%s\n", colorRed, colorReset)
+		os.Exit(1)
+	}
+	fmt.Printf("\n%s✓ All checks passed.%s\n", colorGreen, colorReset)
+}
+
+// -------------------------------------------------------------------------
+// export command
+// -------------------------------------------------------------------------
+
+func cmdExport(args []string) {
+	positional, _ := parseFlags(args)
+
+	format := "json"
+	output := ""
+	var remaining []string
+	for i := 0; i < len(positional); i++ {
+		switch {
+		case positional[i] == "--format" && i+1 < len(positional):
+			i++
+			format = positional[i]
+		case strings.HasPrefix(positional[i], "--format="):
+			format = strings.TrimPrefix(positional[i], "--format=")
+		case positional[i] == "--output" && i+1 < len(positional):
+			i++
+			output = positional[i]
+		case strings.HasPrefix(positional[i], "--output="):
+			output = strings.TrimPrefix(positional[i], "--output=")
+		default:
+			remaining = append(remaining, positional[i])
+		}
+	}
+
+	if len(remaining) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: code-outline-graph-go export <path> [--format json|csv] [--output file]")
+		os.Exit(1)
+	}
+
+	_, database := openProjectDB(remaining[0])
+
+	syms, err := database.GetAllSymbols()
+	if err != nil {
+		errorf("export error: %v", err)
+	}
+
+	var w *os.File
+	if output == "" {
+		w = os.Stdout
+	} else {
+		f, ferr := os.Create(output)
+		if ferr != nil {
+			errorf("cannot create output file: %v", ferr)
+		}
+		defer f.Close()
+		w = f
+	}
+
+	switch format {
+	case "csv":
+		fmt.Fprintln(w, "id,name,kind,file_path,start_line,end_line,signature,language,parent")
+		for _, s := range syms {
+			fmt.Fprintf(w, "%d,%q,%q,%q,%d,%d,%q,%q,%q\n",
+				s.ID, s.Name, s.Kind, s.FilePath, s.StartLine, s.EndLine, s.Signature, s.Language, s.Parent)
+		}
+	default: // json
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		if encErr := enc.Encode(syms); encErr != nil {
+			errorf("JSON encode error: %v", encErr)
+		}
+	}
+
+	if output != "" {
+		stderrf("%s✓ Exported %d symbols to %s%s\n", colorGreen, len(syms), output, colorReset)
+	}
+}
+
+// -------------------------------------------------------------------------
+// callers / callees commands
+// -------------------------------------------------------------------------
+
+func cmdCallers(args []string) {
+	positional, _ := parseFlags(args)
+	if len(positional) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: code-outline-graph-go callers <path> <function-name>")
+		os.Exit(1)
+	}
+
+	_, database := openProjectDB(positional[0])
+	name := positional[1]
+
+	callers, err := database.GetCallersByName(name)
+	if err != nil {
+		errorf("callers error: %v", err)
+	}
+
+	if len(callers) == 0 {
+		fmt.Printf("%sNo callers found for %q%s\n", colorDim, name, colorReset)
+		return
+	}
+	fmt.Printf("%sCallers of %s%s%s:%s\n", colorBold, colorYellow, name, colorBold, colorReset)
+	for _, s := range callers {
+		fmt.Printf("  %s%s%s  %s%s:%d%s\n",
+			colorBold, s.Name, colorReset,
+			colorCyan, s.FilePath, s.StartLine, colorReset)
+		if s.Signature != "" {
+			fmt.Printf("    %s%s%s\n", colorDim, s.Signature, colorReset)
+		}
+	}
+}
+
+func cmdCallees(args []string) {
+	positional, _ := parseFlags(args)
+	if len(positional) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: code-outline-graph-go callees <path> <symbol-name>")
+		os.Exit(1)
+	}
+
+	_, database := openProjectDB(positional[0])
+	name := positional[1]
+
+	syms, err := database.GetSymbolsByName(name, "")
+	if err != nil || len(syms) == 0 {
+		fmt.Printf("%sSymbol %q not found in index%s\n", colorDim, name, colorReset)
+		return
+	}
+
+	resolved, unresolved, err := database.GetCalleeSymbols(syms[0].ID)
+	if err != nil {
+		errorf("callees error: %v", err)
+	}
+
+	if len(resolved) == 0 && len(unresolved) == 0 {
+		fmt.Printf("%sNo callees found for %q%s\n", colorDim, name, colorReset)
+		return
+	}
+	fmt.Printf("%sCallees of %s%s%s:%s\n", colorBold, colorYellow, name, colorBold, colorReset)
+	for _, cs := range resolved {
+		fmt.Printf("  %s%s%s  %s%s:%d%s\n",
+			colorBold, cs.Name, colorReset,
+			colorCyan, cs.FilePath, cs.StartLine, colorReset)
+	}
+	if len(unresolved) > 0 {
+		fmt.Printf("\n%sUnresolved (external/stdlib):%s\n", colorDim, colorReset)
+		for _, u := range unresolved {
+			fmt.Printf("  %s%s%s\n", colorDim, u, colorReset)
+		}
+	}
+}
+
+// -------------------------------------------------------------------------
 // install command helpers
 // -------------------------------------------------------------------------
 
@@ -743,8 +968,16 @@ func main() {
 		cmdInstall(os.Args[2:])
 	case "install-skill":
 		cmdInstallSkill(os.Args[2:])
+	case "doctor":
+		cmdDoctor(os.Args[2:])
+	case "export":
+		cmdExport(os.Args[2:])
+	case "callers":
+		cmdCallers(os.Args[2:])
+	case "callees":
+		cmdCallees(os.Args[2:])
 	case "version":
-		fmt.Println("code-outline-graph-go version 1.1.1 (Go)")
+		fmt.Println("code-outline-graph-go version 1.2.0 (Go)")
 	default:
 		fmt.Fprintf(os.Stderr, "%sunknown command: %s%s\n", colorRed, command, colorReset)
 		printUsage()

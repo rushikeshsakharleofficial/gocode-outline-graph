@@ -189,6 +189,11 @@ func matchSegments(segs, parts []string) bool {
 	return si == len(segs) && pi == len(parts)
 }
 
+// NewParser creates a SymbolParser for health-check / doctor purposes.
+func NewParser() *parser.SymbolParser {
+	return parser.New()
+}
+
 // Indexer orchestrates project and single-file indexing.
 type Indexer struct {
 	database   *db.Database

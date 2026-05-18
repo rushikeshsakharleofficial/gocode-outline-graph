@@ -238,7 +238,7 @@ func cmdSearch(args []string) {
 	positional, _ := parseFlags(args)
 
 	if len(positional) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: code-outline-graph search <path> <query>")
+		fmt.Fprintln(os.Stderr, "usage: code-outline-graph-go search <path> <query>")
 		os.Exit(1)
 	}
 	rawPath := positional[0]
@@ -272,7 +272,7 @@ func cmdOutline(args []string) {
 	positional, _ := parseFlags(args)
 
 	if len(positional) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: code-outline-graph outline <path> <file>")
+		fmt.Fprintln(os.Stderr, "usage: code-outline-graph-go outline <path> <file>")
 		os.Exit(1)
 	}
 	rawPath := positional[0]
@@ -672,10 +672,10 @@ func cmdInstall(args []string) {
 // -------------------------------------------------------------------------
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `%scode-outline-graph%s — Go code indexing and search tool
+	fmt.Fprintf(os.Stderr, `%scode-outline-graph-go%s — Go code indexing and search tool
 
 %sUsage:%s
-  code-outline-graph <command> [options]
+  code-outline-graph-go <command> [options]
 
 %sCommands:%s
   %sbuild%s   <path>         Full index of a project
@@ -744,7 +744,7 @@ func main() {
 	case "install-skill":
 		cmdInstallSkill(os.Args[2:])
 	case "version":
-		fmt.Println("code-outline-graph version 1.1.0 (Go)")
+		fmt.Println("code-outline-graph-go version 1.1.0 (Go)")
 	default:
 		fmt.Fprintf(os.Stderr, "%sunknown command: %s%s\n", colorRed, command, colorReset)
 		printUsage()

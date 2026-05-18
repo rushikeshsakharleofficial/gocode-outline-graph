@@ -14,7 +14,7 @@ Dropped from Python version: fastembed embeddings, sqlite-vec vector search.
 **Always build with `-tags fts5`** — FTS5 is not enabled in go-sqlite3 by default:
 
 ```bash
-go build -buildvcs=false -tags fts5 -o code-outline-graph ./cmd/code-outline-graph/
+go build -buildvcs=false -tags fts5 -o code-outline-graph-go ./cmd/code-outline-graph/
 
 # Or via Makefile:
 make build
@@ -24,15 +24,15 @@ make install   # installs to $GOPATH/bin
 ## Commands
 
 ```bash
-code-outline-graph build .         # full index
-code-outline-graph update .        # incremental reindex
-code-outline-graph search . query  # FTS5 search
-code-outline-graph outline . file  # list symbols for file
-code-outline-graph status .        # DB stats
-code-outline-graph serve           # start MCP server (stdio)
-code-outline-graph prune .         # remove stale entries
-code-outline-graph install         # write MCP config for editors
-code-outline-graph version         # print version
+code-outline-graph-go build .         # full index
+code-outline-graph-go update .        # incremental reindex
+code-outline-graph-go search . query  # FTS5 search
+code-outline-graph-go outline . file  # list symbols for file
+code-outline-graph-go status .        # DB stats
+code-outline-graph-go serve           # start MCP server (stdio)
+code-outline-graph-go prune .         # remove stale entries
+code-outline-graph-go install         # write MCP config for editors
+code-outline-graph-go version         # print version
 ```
 
 ## Architecture
@@ -75,11 +75,11 @@ python, javascript, typescript, tsx, go, rust, java, c, cpp, ruby, bash
 ## MCP Protocol
 
 Hand-rolled JSON-RPC 2.0 over stdin/stdout (no external MCP SDK).
-Newline-delimited JSON. 12 tools match the Python server's tool set.
+Newline-delimited JSON. 14 MCP tools.
 
 ## After Code Changes
 
 ```bash
-go build -buildvcs=false -tags fts5 -o code-outline-graph ./cmd/code-outline-graph/
-./code-outline-graph update .
+go build -buildvcs=false -tags fts5 -o code-outline-graph-go ./cmd/code-outline-graph/
+./code-outline-graph-go update .
 ```

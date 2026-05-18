@@ -1,4 +1,4 @@
-BINARY := code-outline-graph
+BINARY := code-outline-graph-go
 TAGS   := fts5
 BUILD  := go build -buildvcs=false -tags "$(TAGS)"
 

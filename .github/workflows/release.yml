@@ -71,19 +71,20 @@ jobs:
             -o "dist/${BINARY}${{ matrix.ext }}" \
             ./cmd/code-outline-graph/
 
-          # Package into archive
-          cd dist
+          # Package into archive (run from repo root, not from dist/)
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip "${OUTNAME}.zip" "${BINARY}.exe"
+            (cd dist && zip "${OUTNAME}.zip" "${BINARY}.exe")
           else
-            tar czf "${OUTNAME}.tar.gz" "${BINARY}"
+            (cd dist && tar czf "${OUTNAME}.tar.gz" "${BINARY}")
           fi
-          ls -lh
+          ls -lh dist/
 
       - uses: actions/upload-artifact@v4
         with:
           name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.tar.gz dist/*.zip
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
 
   # ── 2. Build Linux packages (deb / rpm / apk) ───────────────────────────────
